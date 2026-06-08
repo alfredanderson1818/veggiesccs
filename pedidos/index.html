@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Haz tu pedido — Veggies CCS</title>
+    <meta name="description" content="Arma tu pedido de frutas y verduras y recíbelo en Caracas. Pide por WhatsApp." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%231f8f37' d='M27 5C15 5 8 12 8 22c0 1 0 2 .3 3C5 22 5 16 5 16S2 24 7 28c2 1.6 5 1.8 7.6 1.2C24 27 28 17 27 5z'/%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' d='M22 11c-6 3-9 8-10 15'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+      :root { --green:#1f8f37; --green-deep:#0e5c25; --cream:#f5f9ef; --cream-2:#eef4e4; --ink:#16241a; --muted:#5d6b5f; --line:#dfe7d6; --card:#fff; --wa:#25d366; }
+      * { box-sizing:border-box; margin:0; padding:0; }
+      body { font-family:"Plus Jakarta Sans",sans-serif; color:var(--ink); background:var(--cream); -webkit-font-smoothing:antialiased; padding-bottom:90px; }
+      .display { font-family:"Fraunces",serif; }
+      a { color:inherit; text-decoration:none; }
+      .wrap { width:min(1100px,94vw); margin:0 auto; }
+
+      header { position:sticky; top:0; z-index:20; background:rgba(245,249,239,.9); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+      .head-inner { display:flex; align-items:center; justify-content:space-between; padding:12px 0; gap:12px; }
+      .brand img { height:42px; display:block; }
+      .back { color:var(--muted); font-weight:600; font-size:14px; }
+      .back:hover { color:var(--green); }
+
+      .intro { padding:26px 0 10px; }
+      .intro h1 { font-size:clamp(26px,4vw,38px); letter-spacing:-.02em; }
+      .intro p { color:var(--muted); margin-top:6px; }
+
+      .search { position:sticky; top:66px; z-index:15; padding:12px 0; background:linear-gradient(var(--cream),var(--cream) 70%,transparent); }
+      .search input { width:100%; padding:13px 18px; border-radius:999px; border:1.5px solid var(--line); font:inherit; background:#fff; }
+      .search input:focus { outline:none; border-color:var(--green); }
+
+      .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px; padding:6px 0 20px; }
+      .prod { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+      .prod.in { border-color:var(--green); background:#f3faef; }
+      .prod .nm { font-weight:700; font-size:14px; line-height:1.2; }
+      .prod .pr { color:var(--green); font-weight:800; font-size:13px; }
+      .prod .pr small { color:var(--muted); font-weight:600; }
+      .row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+      .seg button { border:0; background:#fff; padding:5px 9px; font:inherit; font-size:12px; font-weight:700; color:var(--muted); cursor:pointer; }
+      .seg button.on { background:var(--green); color:#fff; }
+      .stepper { display:flex; align-items:center; gap:5px; }
+      .stepper button { width:28px; height:28px; border-radius:8px; border:1.5px solid var(--line); background:#fff; font-size:16px; font-weight:800; color:var(--green-deep); cursor:pointer; line-height:1; }
+      .stepper button:hover { border-color:var(--green); }
+      .stepper .q { min-width:30px; text-align:center; font-weight:800; font-size:14px; }
+      .add { width:100%; border:1.5px solid var(--green); background:var(--cream-2); color:var(--green-deep); border-radius:8px; padding:6px; font:inherit; font-weight:700; cursor:pointer; }
+      .add:hover { background:#dff0d3; }
+      .est { font-size:11px; color:var(--muted); }
+
+      .barwrap { position:fixed; left:0; right:0; bottom:0; z-index:40; background:#fff; border-top:1px solid var(--line); box-shadow:0 -10px 30px rgba(16,58,29,.1); padding:11px 0; }
+      .bar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .btn { display:inline-flex; align-items:center; gap:8px; padding:12px 20px; border:0; border-radius:999px; font-weight:700; font-size:15px; cursor:pointer; }
+      .btn-wa { background:var(--wa); color:#fff; box-shadow:0 8px 20px rgba(37,211,102,.3); }
+      .cart-info { display:flex; align-items:center; gap:10px; background:transparent; border:0; font:inherit; font-weight:700; cursor:pointer; }
+      .badge { background:var(--green); color:#fff; min-width:28px; height:28px; padding:0 8px; border-radius:999px; display:inline-grid; place-items:center; font-weight:800; }
+
+      .sheet[hidden], .barwrap[hidden] { display:none !important; }
+      .sheet { position:fixed; inset:0; z-index:50; background:rgba(16,36,26,.45); display:flex; align-items:flex-end; justify-content:center; }
+      .sheet-card { background:#fff; width:min(560px,100%); max-height:86vh; overflow-y:auto; border-radius:20px 20px 0 0; padding:20px; }
+      @media (min-width:640px){ .sheet{align-items:center;padding:20px;} .sheet-card{border-radius:20px;} }
+      .sheet-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+      .sheet-head h3 { font-family:"Fraunces",serif; font-size:22px; }
+      .x { width:34px; height:34px; border:0; border-radius:9px; background:var(--cream-2); font-size:22px; cursor:pointer; }
+      .citem { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+      .citem .cn { flex:1; min-width:120px; font-weight:600; font-size:14px; }
+      .citem .cs { font-weight:800; color:var(--green-deep); min-width:64px; text-align:right; }
+      .totals { margin:14px 0; }
+      .totals .tr { display:flex; justify-content:space-between; padding:5px 0; color:var(--muted); }
+      .totals .tr.big { color:var(--ink); font-size:18px; border-top:2px solid var(--green); margin-top:6px; padding-top:10px; }
+      .totals .tr.big strong { font-family:"Fraunces",serif; font-size:24px; color:var(--green-deep); }
+      .note { color:var(--muted); font-size:13px; text-align:center; margin-top:12px; }
+      .empty { text-align:center; color:var(--muted); padding:30px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap head-inner">
+        <a class="brand" href="/"><img src="/src/assets/logo-veggies.png" alt="Veggies CCS" /></a>
+        <a class="back" href="/">← Inicio</a>
+      </div>
+    </header>
+
+    <div class="wrap intro">
+      <h1 class="display">Arma tu pedido</h1>
+      <p>Elige tus productos, en kilos o por unidad. Te confirmamos disponibilidad y total en bolívares por WhatsApp.</p>
+    </div>
+
+    <div class="search"><div class="wrap"><input id="q" type="search" placeholder="🔍 Buscar producto (aguacate, tomate, lechuga...)" autocomplete="off" /></div></div>
+
+    <div class="wrap"><div id="grid" class="grid"></div><p id="empty" class="empty" hidden>No encontramos ese producto.</p></div>
+
+    <div id="barwrap" class="barwrap" hidden>
+      <div class="wrap bar">
+        <button class="cart-info" id="toggle"><span class="badge" id="count">0</span><span id="sum">Tu pedido</span></button>
+        <button class="btn btn-wa" id="send">Enviar pedido →</button>
+      </div>
+    </div>
+
+    <div id="sheet" class="sheet" hidden>
+      <div class="sheet-card">
+        <div class="sheet-head"><h3>Tu pedido</h3><button class="x" id="close">×</button></div>
+        <div id="items"></div>
+        <div class="totals">
+          <div class="tr"><span>Productos</span><span id="subt">$0.00</span></div>
+          <div class="tr"><span>Delivery (promedio Caracas)</span><span id="deliv">$3.00</span></div>
+          <div class="tr big"><span>Total estimado</span><strong id="total">$3.00</strong></div>
+        </div>
+        <button class="btn btn-wa" id="send2" style="width:100%;justify-content:center;">Enviar pedido por WhatsApp →</button>
+        <p class="note">Los pedidos por unidad son un estimado según el peso promedio. El total final se confirma por WhatsApp.</p>
+      </div>
+    </div>
+
+    <script type="module">
+      import { products } from '/src/data/products.mjs';
+      const WHATSAPP = '584142244622';
+      const DELIVERY = 3;
+      const round = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+      const usd = (v) => '$' + round(v).toFixed(2);
+
+      // Peso promedio (kg por unidad) para estimar cuando piden "por unidad".
+      const AVG = [
+        [/patil|sandia/, 5], [/melon|melón/, 2], [/auyama|ahuyama|calabaza/, 2.5], [/pi(n|ñ)a/, 1.5],
+        [/repollo|coliflor/, 1], [/lechuga/, 0.45], [/brocoli|brócoli/, 0.4],
+        [/platano|plátano|yuca|ocumo|(n|ñ)ame|aguacate|berenjena/, 0.3],
+        [/manzana|naranja|pera|durazno|mango|pepino|pimenton|pimentón|cebolla|remolacha|papa|batata/, 0.2],
+        [/tomate|cambur|banana|guineo/, 0.13], [/zanahoria|cebollin|cebollín|ajoporro/, 0.1],
+        [/limon|limón|mandarina/, 0.08], [/ajo\b/, 0.05], [/cilantro|perejil|albahaca|hierbabuena|menta|aji|ají/, 0.05]
+      ];
+      const avgWeight = (name) => { const n = name.toLowerCase(); for (const [re, w] of AVG) if (re.test(n)) return w; return 0.25; };
+
+      const catalog = products
+        .filter((p) => p.controlMode !== 'service')
+        .map((p) => ({ id: p.id, name: p.name, baseUnit: p.unit || 'Kg', price: Number(p.prices?.Principal ?? p.priceUsd ?? 0), avg: avgWeight(p.name) }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+
+      const cart = new Map(); // id -> { qty, unit }
+      const byId = (id) => catalog.find((p) => p.id === id);
+      const $ = (s) => document.querySelector(s);
+      let q = '';
+
+      function lineCost(p, e) {
+        if (e.unit === 'Und' && p.baseUnit === 'Kg') return e.qty * p.avg * p.price; // estimado
+        return e.qty * p.price;
+      }
+      function step(unit) { return unit === 'Kg' ? 0.5 : 1; }
+
+      function renderGrid() {
+        const needle = q.trim().toLowerCase();
+        const list = needle ? catalog.filter((p) => p.name.toLowerCase().includes(needle)) : catalog;
+        $('#empty').hidden = list.length > 0;
+        $('#grid').innerHTML = list.map((p) => {
+          const e = cart.get(p.id);
+          const canUnit = p.baseUnit === 'Kg';
+          let controls;
+          if (!e) {
+            controls = `<button class="add" data-add="${p.id}">+ Agregar</button>`;
+          } else {
+            const seg = canUnit
+              ? `<span class="seg">
+                   <button data-unit="${p.id}|Kg" class="${e.unit==='Kg'?'on':''}">Kg</button>
+                   <button data-unit="${p.id}|Und" class="${e.unit==='Und'?'on':''}">Und</button>
+                 </span>`
+              : `<span class="est">por ${p.baseUnit}</span>`;
+            controls = `<div class="row">${seg}
+              <span class="stepper"><button data-dec="${p.id}">−</button><span class="q">${e.qty}</span><button data-inc="${p.id}">+</button></span></div>`;
+          }
+          const estLine = e && e.unit === 'Und' && canUnit ? `<span class="est">≈ ${round(e.qty * p.avg)} kg · ${usd(lineCost(p, e))}</span>` : '';
+          return `<div class="prod ${e ? 'in' : ''}">
+            <div><div class="nm">${p.name}</div><div class="pr">${usd(p.price)} <small>/ ${p.baseUnit}</small></div></div>
+            ${controls}${estLine}
+          </div>`;
+        }).join('');
+      }
+
+      function renderCart() {
+        const entries = [...cart.entries()];
+        const sub = entries.reduce((s, [id, e]) => s + lineCost(byId(id), e), 0);
+        const total = entries.length ? sub + DELIVERY : 0;
+        $('#barwrap').hidden = entries.length === 0;
+        $('#count').textContent = entries.length;
+        $('#sum').textContent = entries.length ? 'Tu pedido · ' + usd(total) : 'Tu pedido';
+        $('#subt').textContent = usd(sub);
+        $('#total').textContent = usd(total);
+        $('#items').innerHTML = entries.length ? entries.map(([id, e]) => {
+          const p = byId(id);
+          const est = e.unit === 'Und' && p.baseUnit === 'Kg' ? ` <span class="est">(≈ ${round(e.qty * p.avg)} kg)</span>` : '';
+          return `<div class="citem">
+            <span class="stepper"><button data-dec="${id}">−</button><span class="q">${e.qty}</span><button data-inc="${id}">+</button></span>
+            <span class="cn">${e.qty} ${e.unit} ${p.name}${est}</span>
+            <span class="cs">${usd(lineCost(p, e))}</span>
+          </div>`;
+        }).join('') : '<div class="empty">Tu pedido está vacío.</div>';
+      }
+
+      function refresh() { renderGrid(); renderCart(); }
+
+      function addItem(id) { const p = byId(id); cart.set(id, { qty: step(p.baseUnit), unit: p.baseUnit }); refresh(); }
+      function changeQty(id, delta) {
+        const e = cart.get(id); if (!e) return;
+        const next = round(Math.max(0, e.qty + delta * step(e.unit)));
+        if (next <= 0) cart.delete(id); else cart.set(id, { ...e, qty: next });
+        refresh();
+      }
+      function setUnit(id, unit) { const e = cart.get(id); if (!e) return; cart.set(id, { ...e, unit, qty: step(unit) }); refresh(); }
+
+      document.addEventListener('click', (ev) => {
+        const add = ev.target.closest('[data-add]'); if (add) return addItem(add.dataset.add);
+        const inc = ev.target.closest('[data-inc]'); if (inc) return changeQty(inc.dataset.inc, 1);
+        const dec = ev.target.closest('[data-dec]'); if (dec) return changeQty(dec.dataset.dec, -1);
+        const u = ev.target.closest('[data-unit]'); if (u) { const [id, unit] = u.dataset.unit.split('|'); return setUnit(id, unit); }
+      });
+      $('#q').addEventListener('input', (e) => { q = e.target.value; renderGrid(); });
+      $('#toggle').addEventListener('click', () => { $('#sheet').hidden = false; });
+      $('#close').addEventListener('click', () => { $('#sheet').hidden = true; });
+      $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') $('#sheet').hidden = true; });
+
+      function send() {
+        const entries = [...cart.entries()]; if (!entries.length) return;
+        const lines = entries.map(([id, e]) => {
+          const p = byId(id);
+          const est = e.unit === 'Und' && p.baseUnit === 'Kg' ? ` (≈${round(e.qty * p.avg)} kg)` : '';
+          return `• ${e.qty} ${e.unit} ${p.name}${est} — ${usd(lineCost(p, e))}`;
+        });
+        const sub = entries.reduce((s, [id, e]) => s + lineCost(byId(id), e), 0);
+        const text = '*Pedido Veggies CCS* 🥑\n\n' + lines.join('\n') +
+          '\n\nProductos: ' + usd(sub) + '\nDelivery (aprox): ' + usd(DELIVERY) +
+          '\n*Total estimado: ' + usd(sub + DELIVERY) + '*\n\nMi nombre: \nDirección de entrega: ';
+        window.open('https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(text), '_blank');
+      }
+      $('#send').addEventListener('click', send);
+      $('#send2').addEventListener('click', send);
+
+      refresh();
+    </script>
+  </body>
+</html>

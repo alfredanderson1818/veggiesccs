@@ -173,7 +173,7 @@
           <a class="link" href="#como">Cómo funciona</a>
           <a class="link" href="#productos">Productos</a>
           <a class="link" href="#zonas">Zonas</a>
-          <a class="btn btn-wa wa-link" href="#">Pedir por WhatsApp</a>
+          <a class="btn btn-wa" href="/pedidos/">🛒 Hacer pedido</a>
         </nav>
       </div>
     </header>
@@ -186,7 +186,7 @@
             <h1 class="display hero-title reveal d2">Frutas y verduras <em>fresquitas</em>, en la puerta de tu casa.</h1>
             <p class="lead reveal d3">Del mercado a tu hogar el mismo día. Escoge lo que necesitas, nosotros lo seleccionamos fresco y te lo llevamos. Al mayor y al detal.</p>
             <div class="hero-cta reveal d4">
-              <a class="btn btn-wa wa-link" href="#">🟢 Pedir por WhatsApp</a>
+              <a class="btn btn-wa" href="/pedidos/">🛒 Hacer mi pedido</a>
               <a class="btn btn-ghost" href="#como">Cómo funciona</a>
             </div>
             <p class="hero-note reveal d4"><b>Pago móvil · Zelle · Binance · Efectivo</b> &nbsp;·&nbsp; Entrega el mismo día en Caracas</p>
@@ -206,7 +206,7 @@
               </div>
               <div class="basket-foot">
                 <span style="color:var(--muted);font-size:14px;">Listo en minutos</span>
-                <a class="btn btn-wa wa-link" href="#" style="padding:9px 16px;font-size:14px;">Pedir ahora</a>
+                <a class="btn btn-wa" href="/pedidos/" style="padding:9px 16px;font-size:14px;">Pedir ahora</a>
               </div>
             </div>
           </div>
@@ -240,34 +240,11 @@
         <div class="wrap">
           <div class="sec-head center">
             <h2 class="display">Todo lo fresco, en un solo lugar</h2>
-            <p>Variedad del mercado, a precios de mayor y detal.</p>
+            <p>Mira el catálogo completo, elige en kilos o por unidad y arma tu pedido en segundos.</p>
           </div>
-          <div class="shop-search">
-            <input id="shopSearch" type="search" placeholder="🔍 Buscar producto (aguacate, tomate, lechuga...)" autocomplete="off" />
+          <div style="text-align:center;">
+            <a class="btn btn-wa" href="/pedidos/" style="font-size:17px;padding:16px 32px;">🛒 Hacer mi pedido</a>
           </div>
-          <div id="shopGrid" class="shop-grid"></div>
-          <p id="shopEmpty" class="shop-empty" hidden>No encontramos ese producto. Prueba con otro nombre.</p>
-        </div>
-      </section>
-
-      <div id="cartBar" class="cart-bar" hidden>
-        <div class="wrap cart-bar-inner">
-          <button class="cart-info" id="cartToggle">
-            <span class="cart-count" id="cartCount">0</span>
-            <span id="cartSummary">Tu pedido</span>
-          </button>
-          <button class="btn btn-wa" id="cartSend">Enviar pedido por WhatsApp →</button>
-        </div>
-      </div>
-
-      <div id="cartSheet" class="cart-sheet" hidden>
-        <div class="cart-sheet-card">
-          <div class="cart-sheet-head"><h3>Tu pedido</h3><button id="cartClose" class="cart-close">×</button></div>
-          <div id="cartItems" class="cart-items"></div>
-          <div class="cart-sheet-total"><span>Total estimado</span><strong id="cartTotal">$0.00</strong></div>
-          <button class="btn btn-wa" id="cartSend2" style="width:100%;justify-content:center;">Enviar pedido por WhatsApp →</button>
-          <p class="cart-note">Te confirmamos disponibilidad y total en bolívares por WhatsApp.</p>
-        </div>
         </div>
       </section>
 
@@ -306,7 +283,7 @@
         <div class="wrap">
           <h2 class="display">¿Listo para tu pedido?</h2>
           <p>Escríbenos por WhatsApp y recibe tus frutas y verduras fresquitas hoy mismo.</p>
-          <a class="btn btn-wa wa-link" href="#" style="font-size:17px;padding:15px 30px;">🟢 Hacer mi pedido</a>
+          <a class="btn btn-wa" href="/pedidos/" style="font-size:17px;padding:15px 30px;">🛒 Hacer mi pedido</a>
         </div>
       </section>
     </main>
@@ -320,120 +297,13 @@
     </footer>
 
     <a class="float-wa wa-link" href="#" aria-label="Pedir por WhatsApp">💬</a>
-
-    <script type="module">
-      import { products } from '/src/data/products.mjs';
-
-      const WHATSAPP = '584142244622';
-      const usd = (v) => '$' + (Math.round((Number(v) + Number.EPSILON) * 100) / 100).toFixed(2);
-
-      // Enlaces generales de WhatsApp (hero, nav, footer flotante)
-      const helloMsg = encodeURIComponent('Hola Veggies CCS! 🥑 Quiero hacer un pedido:');
-      document.querySelectorAll('.wa-link').forEach((a) => {
-        a.href = 'https://wa.me/' + WHATSAPP + '?text=' + helloMsg;
-        a.target = '_blank';
-        a.rel = 'noopener';
+    <script>
+      var WHATSAPP = "584142244622";
+      var msg = encodeURIComponent("Hola Veggies CCS! Tengo una consulta:");
+      document.querySelectorAll(".wa-link").forEach(function (a) {
+        a.href = "https://wa.me/" + WHATSAPP + "?text=" + msg;
+        a.target = "_blank"; a.rel = "noopener";
       });
-
-      // Catalogo vendible (sin servicios), precio detal (Principal), ordenado
-      const catalog = products
-        .filter((p) => p.controlMode !== 'service')
-        .map((p) => ({ id: p.id, name: p.name, unit: p.unit || 'Kg', price: Number(p.prices?.Principal ?? p.priceUsd ?? 0) }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
-
-      const cart = new Map(); // id -> qty
-      const byId = (id) => catalog.find((p) => p.id === id);
-      const $ = (s) => document.querySelector(s);
-      const grid = $('#shopGrid');
-      const empty = $('#shopEmpty');
-      let search = '';
-
-      function step(unit) { return unit === 'Kg' ? 0.5 : 1; }
-
-      function renderGrid() {
-        const needle = search.trim().toLowerCase();
-        const list = needle ? catalog.filter((p) => p.name.toLowerCase().includes(needle)) : catalog;
-        empty.hidden = list.length > 0;
-        grid.innerHTML = list
-          .map((p) => {
-            const qty = cart.get(p.id) || 0;
-            return `<div class="prod ${qty ? 'in-cart' : ''}">
-              <div class="prod-info">
-                <div class="nm">${p.name}</div>
-                <div class="pr">${usd(p.price)} <small>/ ${p.unit}</small></div>
-              </div>
-              <div class="stepper">
-                <button data-dec="${p.id}" ${qty ? '' : 'style="visibility:hidden"'}>−</button>
-                <span class="qty" ${qty ? '' : 'style="display:none"'}>${qty}</span>
-                <button data-inc="${p.id}">+</button>
-              </div>
-            </div>`;
-          })
-          .join('');
-      }
-
-      function renderCart() {
-        const entries = [...cart.entries()].filter(([, q]) => q > 0);
-        const count = entries.length;
-        const total = entries.reduce((s, [id, q]) => s + byId(id).price * q, 0);
-        $('#cartBar').hidden = count === 0;
-        $('#cartCount').textContent = count;
-        $('#cartSummary').textContent = count ? `Tu pedido · ${usd(total)}` : 'Tu pedido';
-        $('#cartTotal').textContent = usd(total);
-        $('#cartItems').innerHTML = entries
-          .map(([id, q]) => {
-            const p = byId(id);
-            return `<div class="cart-line">
-              <div class="stepper">
-                <button data-dec="${id}">−</button><span class="qty">${q}</span><button data-inc="${id}">+</button>
-              </div>
-              <span class="nm">${p.name} <small style="color:#5d6b5f">(${p.unit})</small></span>
-              <span class="sub">${usd(p.price * q)}</span>
-            </div>`;
-          })
-          .join('');
-      }
-
-      function change(id, delta) {
-        const p = byId(id);
-        const next = Math.max(0, Math.round(((cart.get(id) || 0) + delta) * 10) / 10);
-        if (next <= 0) cart.delete(id);
-        else cart.set(id, next);
-        renderGrid();
-        renderCart();
-      }
-
-      document.addEventListener('click', (e) => {
-        const inc = e.target.closest('[data-inc]');
-        const dec = e.target.closest('[data-dec]');
-        if (inc) change(inc.dataset.inc, step(byId(inc.dataset.inc).unit));
-        if (dec) change(dec.dataset.dec, -step(byId(dec.dataset.dec).unit));
-      });
-
-      $('#shopSearch').addEventListener('input', (e) => { search = e.target.value; renderGrid(); });
-      $('#cartToggle').addEventListener('click', () => { $('#cartSheet').hidden = false; });
-      $('#cartClose').addEventListener('click', () => { $('#cartSheet').hidden = true; });
-      $('#cartSheet').addEventListener('click', (e) => { if (e.target.id === 'cartSheet') $('#cartSheet').hidden = true; });
-
-      function sendOrder() {
-        const entries = [...cart.entries()].filter(([, q]) => q > 0);
-        if (!entries.length) return;
-        const lines = entries.map(([id, q]) => {
-          const p = byId(id);
-          return `• ${q} ${p.unit} ${p.name} — ${usd(p.price * q)}`;
-        });
-        const total = entries.reduce((s, [id, q]) => s + byId(id).price * q, 0);
-        const text =
-          '*Pedido Veggies CCS* 🥑\n\n' +
-          lines.join('\n') +
-          '\n\n*Total estimado: ' + usd(total) + '*\n\nMi nombre es: \nDirección de entrega: ';
-        window.open('https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(text), '_blank');
-      }
-      $('#cartSend').addEventListener('click', sendOrder);
-      $('#cartSend2').addEventListener('click', sendOrder);
-
-      renderGrid();
-      renderCart();
     </script>
   </body>
 </html>
