@@ -221,6 +221,7 @@ function render() {
         ${navButton('accounts', 'Cuentas', 'Pagos')}
         <div class="sidebar-footer">
           <button class="ghost-button" data-action="reset-storage">Reiniciar demo</button>
+          <button class="ghost-button" data-action="logout">Cerrar sesion</button>
           <small>Registrado como:<br><strong>${state.settings.userName}</strong></small>
         </div>
       </aside>
@@ -2383,6 +2384,11 @@ function bindEvents() {
   document.querySelector('[data-action="reset-storage"]')?.addEventListener('click', () => {
     localStorage.clear();
     location.reload();
+  });
+  document.querySelector('[data-action="logout"]')?.addEventListener('click', () => {
+    sessionStorage.removeItem('veggies_auth');
+    sessionStorage.removeItem('veggies_user');
+    location.href = '/admin/';
   });
 
   document.querySelectorAll('[data-supplier-next]').forEach((button) => {
