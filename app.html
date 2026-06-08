@@ -6,6 +6,22 @@
     <title>Veggies CCS · Sistema</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%231f8f37' d='M27 5C15 5 8 12 8 22c0 1 0 2 .3 3C5 22 5 16 5 16S2 24 7 28c2 1.6 5 1.8 7.6 1.2C24 27 28 17 27 5z'/%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' d='M22 11c-6 3-9 8-10 15'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="src/styles.css" />
+    <script>
+      // Respaldo: crypto.randomUUID solo existe en contextos seguros (HTTPS/localhost).
+      // En HTTP (mientras GitHub emite el certificado) esto evita que la app quede en blanco.
+      (function () {
+        if (!window.crypto) window.crypto = {};
+        if (typeof crypto.randomUUID !== 'function') {
+          crypto.randomUUID = function () {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+              var r = (Math.random() * 16) | 0;
+              var v = c === 'x' ? r : (r & 0x3) | 0x8;
+              return v.toString(16);
+            });
+          };
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
