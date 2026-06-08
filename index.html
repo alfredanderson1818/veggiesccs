@@ -115,6 +115,44 @@
       .float-wa { position: fixed; right: 20px; bottom: 20px; z-index: 30; background: var(--wa); color: #fff; width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 12px 28px rgba(37,211,102,0.45); font-size: 30px; }
       .float-wa:hover { transform: scale(1.06); }
 
+      .shop-search { margin: 0 auto 22px; max-width: 520px; }
+      .shop-search input { width: 100%; padding: 14px 18px; border-radius: 999px; border: 1.5px solid var(--line); font: inherit; background: #fff; }
+      .shop-search input:focus { outline: none; border-color: var(--green); }
+      .shop-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+      .prod { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+      .prod-info { flex: 1; min-width: 0; }
+      .prod-info .nm { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .prod-info .pr { color: var(--green); font-weight: 800; font-size: 14px; }
+      .prod-info .pr small { color: var(--muted); font-weight: 600; }
+      .stepper { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+      .stepper button { width: 32px; height: 32px; border-radius: 9px; border: 1.5px solid var(--line); background: #fff; font-size: 18px; font-weight: 700; color: var(--green-deep); cursor: pointer; line-height: 1; }
+      .stepper button:hover { border-color: var(--green); background: var(--cream-2); }
+      .stepper .qty { min-width: 28px; text-align: center; font-weight: 800; }
+      .prod.in-cart { border-color: var(--green); background: #f3faef; }
+      .shop-empty { text-align: center; color: var(--muted); padding: 30px 0; }
+
+      .cart-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -10px 30px rgba(16,58,29,0.1); padding: 12px 0; }
+      .cart-bar-inner { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+      .cart-info { display: flex; align-items: center; gap: 12px; background: transparent; border: 0; cursor: pointer; font: inherit; font-weight: 700; color: var(--ink); }
+      .cart-count { background: var(--green); color: #fff; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 999px; display: inline-grid; place-items: center; font-weight: 800; }
+
+      .cart-sheet { position: fixed; inset: 0; z-index: 50; background: rgba(16,36,26,0.45); display: flex; align-items: flex-end; justify-content: center; padding: 0; }
+      .cart-sheet-card { background: #fff; width: min(560px, 100%); max-height: 82vh; overflow-y: auto; border-radius: 22px 22px 0 0; padding: 22px; }
+      @media (min-width: 640px) { .cart-sheet { align-items: center; padding: 20px; } .cart-sheet-card { border-radius: 22px; } }
+      .cart-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+      .cart-sheet-head h3 { font-family: "Fraunces", serif; font-size: 22px; }
+      .cart-close { width: 34px; height: 34px; border-radius: 9px; border: 0; background: var(--cream-2); font-size: 22px; cursor: pointer; }
+      .cart-items { display: flex; flex-direction: column; gap: 8px; }
+      .cart-line { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+      .cart-line .nm { flex: 1; font-weight: 600; font-size: 15px; }
+      .cart-line .sub { font-weight: 800; color: var(--green-deep); min-width: 70px; text-align: right; }
+      .cart-sheet-total { display: flex; align-items: center; justify-content: space-between; margin: 16px 0; font-size: 16px; }
+      .cart-sheet-total strong { font-family: "Fraunces", serif; font-size: 26px; color: var(--green-deep); }
+      .cart-note { color: var(--muted); font-size: 13px; text-align: center; margin-top: 12px; }
+
+      @media (max-width: 760px) { .shop-grid { grid-template-columns: 1fr; } }
+      @media (min-width: 761px) and (max-width: 1000px) { .shop-grid { grid-template-columns: 1fr 1fr; } }
+
       @media (max-width: 900px) {
         .hero-grid { grid-template-columns: 1fr; gap: 34px; }
         .steps, .cats { grid-template-columns: 1fr 1fr; }
@@ -204,12 +242,32 @@
             <h2 class="display">Todo lo fresco, en un solo lugar</h2>
             <p>Variedad del mercado, a precios de mayor y detal.</p>
           </div>
-          <div class="cats">
-            <div class="cat"><div class="e">🍎</div><h3>Frutas</h3><p>Aguacate, cambur, piña, melón, mandarina, manzana y más.</p></div>
-            <div class="cat"><div class="e">🥬</div><h3>Verduras</h3><p>Lechuga, repollo, brócoli, calabacín, pepino, acelga.</p></div>
-            <div class="cat"><div class="e">🥕</div><h3>Hortalizas</h3><p>Zanahoria, papa, cebolla, ajo, pimentón, ají dulce.</p></div>
-            <div class="cat"><div class="e">🌿</div><h3>Aliños &amp; más</h3><p>Cilantro, cebollín, ajoporro, apio, aceites y víveres.</p></div>
+          <div class="shop-search">
+            <input id="shopSearch" type="search" placeholder="🔍 Buscar producto (aguacate, tomate, lechuga...)" autocomplete="off" />
           </div>
+          <div id="shopGrid" class="shop-grid"></div>
+          <p id="shopEmpty" class="shop-empty" hidden>No encontramos ese producto. Prueba con otro nombre.</p>
+        </div>
+      </section>
+
+      <div id="cartBar" class="cart-bar" hidden>
+        <div class="wrap cart-bar-inner">
+          <button class="cart-info" id="cartToggle">
+            <span class="cart-count" id="cartCount">0</span>
+            <span id="cartSummary">Tu pedido</span>
+          </button>
+          <button class="btn btn-wa" id="cartSend">Enviar pedido por WhatsApp →</button>
+        </div>
+      </div>
+
+      <div id="cartSheet" class="cart-sheet" hidden>
+        <div class="cart-sheet-card">
+          <div class="cart-sheet-head"><h3>Tu pedido</h3><button id="cartClose" class="cart-close">×</button></div>
+          <div id="cartItems" class="cart-items"></div>
+          <div class="cart-sheet-total"><span>Total estimado</span><strong id="cartTotal">$0.00</strong></div>
+          <button class="btn btn-wa" id="cartSend2" style="width:100%;justify-content:center;">Enviar pedido por WhatsApp →</button>
+          <p class="cart-note">Te confirmamos disponibilidad y total en bolívares por WhatsApp.</p>
+        </div>
         </div>
       </section>
 
@@ -263,15 +321,119 @@
 
     <a class="float-wa wa-link" href="#" aria-label="Pedir por WhatsApp">💬</a>
 
-    <script>
-      // 👉 CAMBIA este numero por tu WhatsApp (formato internacional: 58 + numero, sin + ni espacios)
-      var WHATSAPP = '584140000000';
-      var msg = encodeURIComponent('Hola Veggies CCS! 🥑 Quiero hacer un pedido:');
-      document.querySelectorAll('.wa-link').forEach(function (a) {
-        a.href = 'https://wa.me/' + WHATSAPP + '?text=' + msg;
+    <script type="module">
+      import { products } from '/src/data/products.mjs';
+
+      const WHATSAPP = '584142244622';
+      const usd = (v) => '$' + (Math.round((Number(v) + Number.EPSILON) * 100) / 100).toFixed(2);
+
+      // Enlaces generales de WhatsApp (hero, nav, footer flotante)
+      const helloMsg = encodeURIComponent('Hola Veggies CCS! 🥑 Quiero hacer un pedido:');
+      document.querySelectorAll('.wa-link').forEach((a) => {
+        a.href = 'https://wa.me/' + WHATSAPP + '?text=' + helloMsg;
         a.target = '_blank';
         a.rel = 'noopener';
       });
+
+      // Catalogo vendible (sin servicios), precio detal (Principal), ordenado
+      const catalog = products
+        .filter((p) => p.controlMode !== 'service')
+        .map((p) => ({ id: p.id, name: p.name, unit: p.unit || 'Kg', price: Number(p.prices?.Principal ?? p.priceUsd ?? 0) }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+
+      const cart = new Map(); // id -> qty
+      const byId = (id) => catalog.find((p) => p.id === id);
+      const $ = (s) => document.querySelector(s);
+      const grid = $('#shopGrid');
+      const empty = $('#shopEmpty');
+      let search = '';
+
+      function step(unit) { return unit === 'Kg' ? 0.5 : 1; }
+
+      function renderGrid() {
+        const needle = search.trim().toLowerCase();
+        const list = needle ? catalog.filter((p) => p.name.toLowerCase().includes(needle)) : catalog;
+        empty.hidden = list.length > 0;
+        grid.innerHTML = list
+          .map((p) => {
+            const qty = cart.get(p.id) || 0;
+            return `<div class="prod ${qty ? 'in-cart' : ''}">
+              <div class="prod-info">
+                <div class="nm">${p.name}</div>
+                <div class="pr">${usd(p.price)} <small>/ ${p.unit}</small></div>
+              </div>
+              <div class="stepper">
+                <button data-dec="${p.id}" ${qty ? '' : 'style="visibility:hidden"'}>−</button>
+                <span class="qty" ${qty ? '' : 'style="display:none"'}>${qty}</span>
+                <button data-inc="${p.id}">+</button>
+              </div>
+            </div>`;
+          })
+          .join('');
+      }
+
+      function renderCart() {
+        const entries = [...cart.entries()].filter(([, q]) => q > 0);
+        const count = entries.length;
+        const total = entries.reduce((s, [id, q]) => s + byId(id).price * q, 0);
+        $('#cartBar').hidden = count === 0;
+        $('#cartCount').textContent = count;
+        $('#cartSummary').textContent = count ? `Tu pedido · ${usd(total)}` : 'Tu pedido';
+        $('#cartTotal').textContent = usd(total);
+        $('#cartItems').innerHTML = entries
+          .map(([id, q]) => {
+            const p = byId(id);
+            return `<div class="cart-line">
+              <div class="stepper">
+                <button data-dec="${id}">−</button><span class="qty">${q}</span><button data-inc="${id}">+</button>
+              </div>
+              <span class="nm">${p.name} <small style="color:#5d6b5f">(${p.unit})</small></span>
+              <span class="sub">${usd(p.price * q)}</span>
+            </div>`;
+          })
+          .join('');
+      }
+
+      function change(id, delta) {
+        const p = byId(id);
+        const next = Math.max(0, Math.round(((cart.get(id) || 0) + delta) * 10) / 10);
+        if (next <= 0) cart.delete(id);
+        else cart.set(id, next);
+        renderGrid();
+        renderCart();
+      }
+
+      document.addEventListener('click', (e) => {
+        const inc = e.target.closest('[data-inc]');
+        const dec = e.target.closest('[data-dec]');
+        if (inc) change(inc.dataset.inc, step(byId(inc.dataset.inc).unit));
+        if (dec) change(dec.dataset.dec, -step(byId(dec.dataset.dec).unit));
+      });
+
+      $('#shopSearch').addEventListener('input', (e) => { search = e.target.value; renderGrid(); });
+      $('#cartToggle').addEventListener('click', () => { $('#cartSheet').hidden = false; });
+      $('#cartClose').addEventListener('click', () => { $('#cartSheet').hidden = true; });
+      $('#cartSheet').addEventListener('click', (e) => { if (e.target.id === 'cartSheet') $('#cartSheet').hidden = true; });
+
+      function sendOrder() {
+        const entries = [...cart.entries()].filter(([, q]) => q > 0);
+        if (!entries.length) return;
+        const lines = entries.map(([id, q]) => {
+          const p = byId(id);
+          return `• ${q} ${p.unit} ${p.name} — ${usd(p.price * q)}`;
+        });
+        const total = entries.reduce((s, [id, q]) => s + byId(id).price * q, 0);
+        const text =
+          '*Pedido Veggies CCS* 🥑\n\n' +
+          lines.join('\n') +
+          '\n\n*Total estimado: ' + usd(total) + '*\n\nMi nombre es: \nDirección de entrega: ';
+        window.open('https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(text), '_blank');
+      }
+      $('#cartSend').addEventListener('click', sendOrder);
+      $('#cartSend2').addEventListener('click', sendOrder);
+
+      renderGrid();
+      renderCart();
     </script>
   </body>
 </html>

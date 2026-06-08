@@ -1261,6 +1261,50 @@ th {
   color: var(--muted);
 }
 
+.account-card.clickable {
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.account-card.clickable:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 34px rgba(23, 32, 51, 0.1);
+  border-color: var(--brand);
+}
+
+.acct-see {
+  margin-top: 10px;
+  color: var(--brand);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.account-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.account-detail-head h2 {
+  margin: 2px 0 0;
+}
+
+.account-detail-balance {
+  margin-left: auto;
+  text-align: right;
+}
+
+.account-detail-balance small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-detail-balance strong {
+  font-size: 24px;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

@@ -75,6 +75,7 @@ let customerSearch = '';
 let accountModal = null;
 let customerQuery = '';
 let paymentMode = 'contado'; // 'contado' | 'credito'
+let selectedAccountId = null;
 let currentOrder = createOrderDraft({
   orderNumber: nextOrderNumber(),
   exchangeRate: state.settings.exchangeRate,
@@ -1956,6 +1957,7 @@ function nextStatusButton(order) {
 }
 
 function renderAccounts() {
+  if (selectedAccountId) return renderAccountDetail(selectedAccountId);
   const totals = totalsByCurrency(state.accounts);
   const rate = state.settings.exchangeRate.value;
   return `
@@ -2008,7 +2010,7 @@ function renderAccountCard(account, rate) {
       ? `<small class="usd-eq">(${formatUsd(account.balance / rate)})</small>`
       : '';
   return `
-    <article class="account-card">
+    <article class="account-card clickable" data-account-detail="${account.id}">
       <span>${account.currency}</span>
       <strong>${account.name}</strong>
       <b>${account.currency === 'USD' ? formatUsd(account.balance) : formatVes(account.balance)} ${equiv}</b>
@@ -2019,7 +2021,93 @@ function renderAccountCard(account, rate) {
             : '<span class="method-pill empty">Sin metodos</span>'
         }
       </div>
+      <span class="acct-see">Ver historial →</span>
     </article>
+  `;
+}
+
+function accountMovementLabel(type) {
+  return {
+    payment: 'Pago de venta',
+    income: 'Ingreso',
+    withdrawal: 'Retiro',
+    transfer_in: 'Transferencia (entra)',
+    transfer_out: 'Transferencia (sale)'
+  }[type] || type;
+}
+
+function renderAccountDetail(accountId) {
+  const account = state.accounts.find((a) => a.id === accountId);
+  if (!account) {
+    selectedAccountId = null;
+    return renderAccounts();
+  }
+  const fmt = (v) => (account.currency === 'VES' ? formatVes(v) : formatUsd(v));
+  const rate = state.settings.exchangeRate.value;
+
+  // Movimientos de esta cuenta, en orden cronologico, con saldo corriente.
+  const moves = state.accountMovements
+    .filter((m) => m.accountId === accountId)
+    .slice()
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+  const net = moves.reduce((s, m) => s + Number(m.amount || 0), 0);
+  const startBalance = roundMoney(Number(account.balance || 0) - net);
+  let running = startBalance;
+  const rows = moves.map((m) => {
+    running = roundMoney(running + Number(m.amount || 0));
+    return { ...m, balanceAfter: running };
+  });
+  rows.reverse(); // mostrar lo mas reciente arriba
+
+  const ingresos = roundMoney(moves.filter((m) => m.amount > 0).reduce((s, m) => s + m.amount, 0));
+  const egresos = roundMoney(moves.filter((m) => m.amount < 0).reduce((s, m) => s + Math.abs(m.amount), 0));
+
+  return `
+    <section class="accounts-panel">
+      <div class="account-detail-head">
+        <button class="ghost-button compact" data-action="close-account-detail">&larr; Cuentas</button>
+        <div>
+          <span class="sku">${account.currency}${account.currency === 'VES' && rate ? ` · equivale a ${formatUsd(account.balance / rate)}` : ''}</span>
+          <h2>${account.name}</h2>
+        </div>
+        <div class="account-detail-balance">
+          <small>Saldo actual</small>
+          <strong>${fmt(account.balance)}</strong>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        ${metricCard('Saldo actual', fmt(account.balance), account.currency, 'solid')}
+        ${metricCard('Total ingresos', fmt(ingresos), `${moves.filter((m) => m.amount > 0).length} movimientos`, '')}
+        ${metricCard('Total egresos', fmt(egresos), `${moves.filter((m) => m.amount < 0).length} movimientos`, '')}
+        ${metricCard('Saldo inicial', fmt(startBalance), 'Antes de movimientos', '')}
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Tipo</th><th>Detalle</th><th>Tasa</th><th>Monto</th><th>Saldo</th></tr></thead>
+          <tbody>
+            ${
+              rows.length
+                ? rows
+                    .map(
+                      (m) => `
+                        <tr>
+                          <td>${(m.createdAt || '').slice(0, 10)}<br/><small class="muted-cell">${(m.createdAt || '').slice(11, 16)}</small></td>
+                          <td>${accountMovementLabel(m.type)}</td>
+                          <td>${m.note || ''}</td>
+                          <td>${m.rate ? `${m.rate} Bs/$` : '—'}</td>
+                          <td class="${m.amount < 0 ? 'neg-cell' : 'pos-cell'}">${m.amount < 0 ? '' : '+'}${fmt(m.amount)}</td>
+                          <td><strong>${fmt(m.balanceAfter)}</strong></td>
+                        </tr>`
+                    )
+                    .join('')
+                : '<tr><td colspan="6" class="muted-cell">Esta cuenta aun no tiene movimientos.</td></tr>'
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
   `;
 }
 
@@ -2252,6 +2340,16 @@ function bindAccountModal() {
   document.querySelectorAll('[data-acct-action]').forEach((button) => {
     button.addEventListener('click', () => openAccountModal(button.dataset.acctAction));
   });
+  document.querySelectorAll('[data-account-detail]').forEach((card) => {
+    card.addEventListener('click', () => {
+      selectedAccountId = card.dataset.accountDetail;
+      render();
+    });
+  });
+  document.querySelector('[data-action="close-account-detail"]')?.addEventListener('click', () => {
+    selectedAccountId = null;
+    render();
+  });
   document.querySelectorAll('[data-abono]').forEach((button) => {
     button.addEventListener('click', () => {
       accountModal = { type: 'abono', receivableId: button.dataset.abono, accountId: state.accounts[0].id, amount: '', note: '' };
@@ -2296,6 +2394,7 @@ function bindEvents() {
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', () => {
       activeView = button.dataset.view;
+      selectedAccountId = null;
       render();
     });
   });
