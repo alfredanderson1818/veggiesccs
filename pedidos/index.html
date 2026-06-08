@@ -32,12 +32,12 @@
       .search input:focus { outline:none; border-color:var(--green); }
 
       .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:6px 0 20px; }
-      @media (max-width:820px){ .grid{ grid-template-columns:1fr 1fr; } }
-      @media (max-width:520px){ .grid{ grid-template-columns:1fr; } }
+      @media (max-width:620px){ .grid{ grid-template-columns:1fr 1fr; } }
+      @media (max-width:420px){ .grid{ grid-template-columns:1fr; } }
 
       .pop-wrap { padding:6px 0 4px; }
       .pop-title { font-weight:800; font-size:14px; margin-bottom:10px; display:flex; align-items:center; gap:7px; }
-      .pop-row { display:flex; gap:9px; overflow-x:auto; padding-bottom:6px; scrollbar-width:thin; }
+      .pop-row { display:flex; flex-wrap:wrap; gap:9px; padding-bottom:6px; }
       .pop { flex:0 0 auto; display:flex; align-items:center; gap:8px; background:#fff; border:1.5px solid var(--line); border-radius:999px; padding:8px 14px 8px 10px; font:inherit; font-weight:700; font-size:14px; cursor:pointer; position:relative; }
       .pop:hover { border-color:var(--green); background:var(--cream-2); }
       .pop.on { border-color:var(--green); background:#e7f6dd; }
