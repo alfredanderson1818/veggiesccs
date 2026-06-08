@@ -159,10 +159,16 @@
 
       // Lo mas pedido: productos comunes (con emoji) para agregar de un toque.
       const POPULAR = [
-        ['🥑', 'aguacate'], ['🍅', 'tomate'], ['🧅', 'cebolla blanca'], ['🥔', 'papa'],
-        ['🍌', 'cambur'], ['🥬', 'lechuga'], ['🍋', 'limon'], ['🫑', 'pimenton'],
+        ['🥑', 'aguacate'], ['🍅', 'tomate'], ['🧅', 'cebolla blanca'], ['🧅', 'cebolla morada'],
+        ['🥔', 'papa'], ['🍌', 'cambur'], ['🥬', 'lechuga'], ['🍋', 'limon'], ['🫑', 'pimenton'],
         ['🥕', 'zanahoria'], ['🌶️', 'aji dulce'], ['🥒', 'pepino'], ['🌿', 'cilantro'],
-        ['🧄', 'ajo'], ['🍍', 'pina']
+        ['🧄', 'ajo'], ['🍍', 'pina'], ['🥦', 'brocoli'], ['🥬', 'repollo'], ['🥒', 'calabacin'],
+        ['🌿', 'apio'], ['🧅', 'ajoporro'], ['🌿', 'cebollin'], ['🍠', 'batata'], ['🥔', 'yuca'],
+        ['🎃', 'ahuyama'], ['🍆', 'berenjena'], ['🫚', 'jengibre'], ['🫛', 'vainita'],
+        ['🍉', 'patilla'], ['🍈', 'melon'], ['🥭', 'mango'], ['🍊', 'naranja'], ['🍊', 'mandarina'],
+        ['🍐', 'pera'], ['🍎', 'manzana'], ['🥥', 'coco'], ['🫐', 'parchita'], ['🍓', 'fresa'],
+        ['🥗', 'celery'], ['🌿', 'perejil'], ['🥬', 'acelga'], ['🍠', 'ocumo'], ['🍠', 'name'],
+        ['🟣', 'remolacha'], ['🌽', 'jojoto'], ['🥬', 'coliflor']
       ];
       const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
       const popular = POPULAR
