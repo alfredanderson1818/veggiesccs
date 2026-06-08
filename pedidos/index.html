@@ -31,7 +31,19 @@
       .search input { width:100%; padding:13px 18px; border-radius:999px; border:1.5px solid var(--line); font:inherit; background:#fff; }
       .search input:focus { outline:none; border-color:var(--green); }
 
-      .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px; padding:6px 0 20px; }
+      .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:6px 0 20px; }
+      @media (max-width:820px){ .grid{ grid-template-columns:1fr 1fr; } }
+      @media (max-width:520px){ .grid{ grid-template-columns:1fr; } }
+
+      .pop-wrap { padding:6px 0 4px; }
+      .pop-title { font-weight:800; font-size:14px; margin-bottom:10px; display:flex; align-items:center; gap:7px; }
+      .pop-row { display:flex; gap:9px; overflow-x:auto; padding-bottom:6px; scrollbar-width:thin; }
+      .pop { flex:0 0 auto; display:flex; align-items:center; gap:8px; background:#fff; border:1.5px solid var(--line); border-radius:999px; padding:8px 14px 8px 10px; font:inherit; font-weight:700; font-size:14px; cursor:pointer; position:relative; }
+      .pop:hover { border-color:var(--green); background:var(--cream-2); }
+      .pop.on { border-color:var(--green); background:#e7f6dd; }
+      .pop .pe { font-size:18px; }
+      .pop b { color:var(--green); font-weight:800; }
+      .pop .qb { background:var(--green); color:#fff; border-radius:999px; min-width:20px; height:20px; padding:0 6px; font-size:12px; display:inline-grid; place-items:center; }
       .prod { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
       .prod.in { border-color:var(--green); background:#f3faef; }
       .prod .nm { font-weight:700; font-size:14px; line-height:1.2; }
@@ -87,6 +99,11 @@
       <p>Elige tus productos, en kilos o por unidad. Te confirmamos disponibilidad y total en bolívares por WhatsApp.</p>
     </div>
 
+    <div class="wrap pop-wrap">
+      <div class="pop-title">⭐ Lo más pedido</div>
+      <div id="popular" class="pop-row"></div>
+    </div>
+
     <div class="search"><div class="wrap"><input id="q" type="search" placeholder="🔍 Buscar producto (aguacate, tomate, lechuga...)" autocomplete="off" /></div></div>
 
     <div class="wrap"><div id="grid" class="grid"></div><p id="empty" class="empty" hidden>No encontramos ese producto.</p></div>
@@ -139,6 +156,32 @@
       const byId = (id) => catalog.find((p) => p.id === id);
       const $ = (s) => document.querySelector(s);
       let q = '';
+
+      // Lo mas pedido: productos comunes (con emoji) para agregar de un toque.
+      const POPULAR = [
+        ['🥑', 'aguacate'], ['🍅', 'tomate'], ['🧅', 'cebolla blanca'], ['🥔', 'papa'],
+        ['🍌', 'cambur'], ['🥬', 'lechuga'], ['🍋', 'limon'], ['🫑', 'pimenton'],
+        ['🥕', 'zanahoria'], ['🌶️', 'aji dulce'], ['🥒', 'pepino'], ['🌿', 'cilantro'],
+        ['🧄', 'ajo'], ['🍍', 'pina']
+      ];
+      const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const popular = POPULAR
+        .map(([emoji, key]) => {
+          const p = catalog.find((x) => norm(x.name) === norm(key)) || catalog.find((x) => norm(x.name).includes(norm(key)));
+          return p ? { ...p, emoji } : null;
+        })
+        .filter(Boolean)
+        .filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
+
+      function renderPopular() {
+        $('#popular').innerHTML = popular.map((p) => {
+          const e = cart.get(p.id);
+          const qb = e ? `<span class="qb">${e.qty}</span>` : '';
+          return `<button class="pop ${e ? 'on' : ''}" data-add-pop="${p.id}">
+            <span class="pe">${p.emoji}</span>${p.name} <b>${usd(p.price)}</b>${qb}
+          </button>`;
+        }).join('');
+      }
 
       function lineCost(p, e) {
         if (e.unit === 'Und' && p.baseUnit === 'Kg') return e.qty * p.avg * p.price; // estimado
@@ -194,7 +237,7 @@
         }).join('') : '<div class="empty">Tu pedido está vacío.</div>';
       }
 
-      function refresh() { renderGrid(); renderCart(); }
+      function refresh() { renderPopular(); renderGrid(); renderCart(); }
 
       function addItem(id) { const p = byId(id); cart.set(id, { qty: step(p.baseUnit), unit: p.baseUnit }); refresh(); }
       function changeQty(id, delta) {
@@ -206,6 +249,7 @@
       function setUnit(id, unit) { const e = cart.get(id); if (!e) return; cart.set(id, { ...e, unit, qty: step(unit) }); refresh(); }
 
       document.addEventListener('click', (ev) => {
+        const pop = ev.target.closest('[data-add-pop]'); if (pop) { const id = pop.dataset.addPop; return cart.has(id) ? changeQty(id, 1) : addItem(id); }
         const add = ev.target.closest('[data-add]'); if (add) return addItem(add.dataset.add);
         const inc = ev.target.closest('[data-inc]'); if (inc) return changeQty(inc.dataset.inc, 1);
         const dec = ev.target.closest('[data-dec]'); if (dec) return changeQty(dec.dataset.dec, -1);
