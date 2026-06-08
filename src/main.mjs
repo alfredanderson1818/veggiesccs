@@ -204,7 +204,7 @@ function render() {
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-mark">
-          <img src="src/assets/logo-veggies.png" alt="Veggies CCS" class="brand-logo" />
+          <img src="/src/assets/logo-veggies.png" alt="Veggies CCS" class="brand-logo" />
         </div>
         <p class="eyebrow">Modulos</p>
         ${navButton('dashboard', 'Home', 'Resumen')}

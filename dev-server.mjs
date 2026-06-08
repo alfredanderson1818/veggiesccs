@@ -15,7 +15,10 @@ const TYPES = {
 createServer(async (req, res) => {
   try {
     const urlPath = decodeURIComponent(req.url.split('?')[0]);
-    const rel = urlPath === '/' ? 'index.html' : normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
+    let rel = normalize(urlPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
+    // Resuelve directorios a su index.html (como GitHub Pages): / y /admin -> index.html
+    if (!rel || urlPath.endsWith('/')) rel = join(rel, 'index.html');
+    else if (!extname(rel)) rel = join(rel, 'index.html');
     const filePath = join(ROOT, rel);
     const body = await readFile(filePath);
     res.writeHead(200, { 'Content-Type': TYPES[extname(filePath)] || 'application/octet-stream' });
