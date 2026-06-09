@@ -1845,34 +1845,136 @@ th {
 
 @media (max-width: 720px) {
   .workspace {
-    padding: 18px 14px 28px;
+    padding: 14px 12px 40px;
   }
 
+  /* Navegacion: barra superior de chips compactos y deslizables */
+  .sidebar {
+    padding: 9px 10px;
+    gap: 7px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    box-shadow: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav-button {
+    min-width: auto;
+    flex-direction: row;
+    gap: 0;
+    padding: 8px 15px;
+    border-radius: 999px;
+    background: var(--panel-soft);
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .nav-button small {
+    display: none;
+  }
+  .nav-button span {
+    font-size: 14px;
+  }
+  .nav-button.active {
+    background: var(--brand-soft);
+  }
+
+  /* Topbar */
   .topbar,
   .section-heading {
     align-items: stretch;
     flex-direction: column;
+    gap: 10px;
+  }
+  .topbar h1 {
+    font-size: 23px;
+  }
+  .top-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .top-actions button {
+    flex: 1 1 30%;
+    min-width: 0;
+    padding: 12px 10px;
+    font-size: 13px;
   }
 
-  .top-actions,
+  /* Tarjetas resumen: 2 columnas compactas */
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .metric-card {
+    padding: 14px;
+    min-height: auto;
+  }
+  .metric-card strong {
+    font-size: 20px;
+    margin: 8px 0 4px;
+  }
+  .metric-card span,
+  .metric-card small {
+    font-size: 12px;
+  }
+
+  /* Apilar grids a una columna */
+  .pos-grid,
   .control-strip,
   .search-row,
-  .payment-methods {
+  .payment-methods,
+  .home-grid,
+  .reports-grid,
+  .rates-grid,
+  .inventory-grid,
+  .checkout-grid {
     grid-template-columns: 1fr;
+  }
+  .control-strip,
+  .search-row {
     display: grid;
+  }
+  .order-panel,
+  .checkout-summary {
+    max-height: none;
+    position: static;
   }
 
   .cart-item {
     grid-template-columns: 24px 1fr;
   }
-
   .cart-item input,
   .cart-item b {
     grid-column: 2;
   }
-
   .supplier-line,
   .supplier-summary {
     grid-template-columns: 1fr;
+  }
+
+  /* Tablas anchas: que se deslicen, no que rompan el layout */
+  .table-wrap {
+    overflow-x: auto;
+  }
+  .table-wrap table {
+    min-width: 540px;
+  }
+
+  /* Modales y formularios ocupan bien la pantalla */
+  .modal {
+    max-width: 100%;
+  }
+  .preinvoice-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .preinvoice-totals {
+    margin-left: 0;
+  }
+  .account-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .account-actions .account-totals {
+    margin-left: 0;
   }
 }
