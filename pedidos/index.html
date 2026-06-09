@@ -83,6 +83,9 @@
       .totals .tr.big { color:var(--ink); font-size:18px; border-top:2px solid var(--green); margin-top:6px; padding-top:10px; }
       .totals .tr.big strong { font-family:"Fraunces",serif; font-size:24px; color:var(--green-deep); }
       .note { color:var(--muted); font-size:13px; text-align:center; margin-top:12px; }
+      .cust-fields { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+      .cust-fields input { width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:10px; font:inherit; }
+      .cust-fields input:focus { outline:none; border-color:var(--green); }
       .empty { text-align:center; color:var(--muted); padding:30px; }
     </style>
   </head>
@@ -124,6 +127,11 @@
           <div class="tr"><span>Delivery (promedio Caracas)</span><span id="deliv">$3.00</span></div>
           <div class="tr big"><span>Total estimado</span><strong id="total">$3.00</strong></div>
         </div>
+        <div class="cust-fields">
+          <input id="cname" placeholder="Tu nombre *" autocomplete="name" />
+          <input id="cphone" placeholder="Tu teléfono / WhatsApp *" autocomplete="tel" />
+          <input id="caddr" placeholder="Dirección de entrega *" autocomplete="street-address" />
+        </div>
         <button class="btn btn-wa" id="send2" style="width:100%;justify-content:center;">Enviar pedido por WhatsApp →</button>
         <p class="note">Los pedidos por unidad son un estimado según el peso promedio. El total final se confirma por WhatsApp.</p>
       </div>
@@ -131,6 +139,7 @@
 
     <script type="module">
       import { products } from '/src/data/products.mjs';
+      import { supabase, BUSINESS_ID } from '/src/supabase/client.mjs';
       const WHATSAPP = '584242244622';
       const DELIVERY = 3;
       const round = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
@@ -266,20 +275,45 @@
       $('#close').addEventListener('click', () => { $('#sheet').hidden = true; });
       $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') $('#sheet').hidden = true; });
 
-      function send() {
+      async function send() {
         const entries = [...cart.entries()]; if (!entries.length) return;
-        const lines = entries.map(([id, e]) => {
+        const name = ($('#cname')?.value || '').trim();
+        const phone = ($('#cphone')?.value || '').trim();
+        const addr = ($('#caddr')?.value || '').trim();
+        if (!name || !phone || !addr) {
+          $('#sheet').hidden = false;
+          alert('Completa tu nombre, teléfono y dirección para enviar el pedido.');
+          return;
+        }
+
+        const items = entries.map(([id, e]) => {
           const p = byId(id);
-          const est = e.unit === 'Und' && p.baseUnit === 'Kg' ? ` (≈${round(e.qty * p.avg)} kg)` : '';
-          return `• ${e.qty} ${e.unit} ${p.name}${est} — ${usd(lineCost(p, e))}`;
+          const baseQty = e.unit === 'Und' && p.baseUnit === 'Kg' ? round(e.qty * p.avg) : e.qty;
+          return { id, name: p.name, baseUnit: p.baseUnit, orderUnit: e.unit, qty: e.qty, baseQty, price: p.price, cost: round(lineCost(p, e)) };
         });
-        const sub = entries.reduce((s, [id, e]) => s + lineCost(byId(id), e), 0);
+        const sub = round(entries.reduce((s, [id, e]) => s + lineCost(byId(id), e), 0));
+        const total = round(sub + DELIVERY);
+
+        // Guardar el pedido en la nube para que entre al sistema del admin.
+        try {
+          await supabase.from('web_orders').insert({
+            business_id: BUSINESS_ID,
+            customer_name: name, customer_phone: phone, address: addr,
+            items, subtotal: sub, delivery: DELIVERY, total,
+            note: ''
+          });
+        } catch (err) { /* si falla la nube, igual mandamos el WhatsApp */ }
+
+        const lines = items.map((it) => {
+          const est = it.orderUnit === 'Und' && it.baseUnit === 'Kg' ? ` (≈${it.baseQty} kg)` : '';
+          return `• ${it.qty} ${it.orderUnit} ${it.name}${est} — ${usd(it.cost)}`;
+        });
         const text = '*Pedido Veggies CCS* 🥑\n\n' + lines.join('\n') +
           '\n\nProductos: ' + usd(sub) + '\nDelivery (aprox): ' + usd(DELIVERY) +
-          '\n*Total estimado: ' + usd(sub + DELIVERY) + '*\n\nMi nombre: \nDirección de entrega: ';
+          '\n*Total estimado: ' + usd(total) + '*\n\nNombre: ' + name + '\nTeléfono: ' + phone + '\nDirección: ' + addr;
         window.open('https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(text), '_blank');
       }
-      $('#send').addEventListener('click', send);
+      $('#send').addEventListener('click', () => { $('#sheet').hidden = false; });
       $('#send2').addEventListener('click', send);
 
       refresh();

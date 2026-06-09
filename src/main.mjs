@@ -62,6 +62,7 @@ import {
   preInvoiceTotals
 } from './domain/invoiceImport.mjs';
 import { loadInitialState, persistState } from './state/appState.mjs';
+import { supabase } from './supabase/client.mjs';
 
 const root = document.querySelector('#root');
 const state = loadInitialState();
@@ -76,6 +77,8 @@ let accountModal = null;
 let customerQuery = '';
 let paymentMode = 'contado'; // 'contado' | 'credito'
 let selectedAccountId = null;
+let webOrders = [];
+let webOrdersStatus = '';
 let currentOrder = createOrderDraft({
   orderNumber: nextOrderNumber(),
   exchangeRate: state.settings.exchangeRate,
@@ -210,6 +213,7 @@ function render() {
         <p class="eyebrow">Modulos</p>
         ${navButton('dashboard', 'Home', 'Resumen')}
         ${navButton('pos', 'Pedidos', 'Nuevo pedido')}
+        ${navButton('weborders', 'Pedidos web', 'Desde la pagina')}
         ${navButton('import', 'Importar', 'Factura proveedor')}
         ${navButton('galpon', 'Galpon', 'Preparacion')}
         ${navButton('catalog', 'Catalogo', 'Productos')}
@@ -242,6 +246,7 @@ function render() {
         ${activeView === 'dashboard' ? renderHome() : ''}
         ${activeView === 'checkout' ? renderCheckout(totals) : ''}
         ${activeView === 'pos' ? renderPos(totals) : ''}
+        ${activeView === 'weborders' ? renderWebOrders() : ''}
         ${activeView === 'import' ? renderImport() : ''}
         ${activeView === 'galpon' ? renderGalpon() : ''}
         ${activeView === 'catalog' ? renderCatalog() : ''}
@@ -1649,6 +1654,114 @@ function renderCustomers() {
   `;
 }
 
+function renderWebOrders() {
+  return `
+    <section class="customers-panel">
+      <div class="section-heading">
+        <h2>Pedidos web</h2>
+        <button class="primary-button compact" data-action="refresh-weborders">Actualizar</button>
+      </div>
+      <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">Pedidos que tus clientes hacen desde veggiesccs.com/pedidos.</p>
+      ${webOrdersStatus ? `<div class="rate-status">${webOrdersStatus}</div>` : ''}
+      <div class="docs-order-list">
+        ${
+          webOrders.length
+            ? webOrders.map(renderWebOrderCard).join('')
+            : (webOrdersStatus ? '' : '<div class="empty-cart">No hay pedidos web nuevos. Dale a Actualizar.</div>')
+        }
+      </div>
+    </section>
+  `;
+}
+
+function renderWebOrderCard(order) {
+  const items = Array.isArray(order.items) ? order.items : [];
+  const when = (order.created_at || '').replace('T', ' ').slice(0, 16);
+  return `
+    <article class="docs-order">
+      <div class="docs-order-head">
+        <div>
+          <span class="sku">${when} · ${order.customer_phone || 'sin tel'}</span>
+          <h3>${order.customer_name || 'Cliente web'}</h3>
+          ${order.address ? `<small class="muted-cell">${order.address}</small>` : ''}
+        </div>
+        <div class="docs-order-total">
+          <strong>${formatUsd(order.total || 0)}</strong>
+          <span class="status-pill prepared">${order.status || 'nuevo'}</span>
+        </div>
+      </div>
+      <div class="web-items">
+        ${items.map((it) => `<span class="method-pill">${it.qty} ${it.orderUnit || it.unit || ''} ${it.name}</span>`).join('')}
+      </div>
+      <div class="docs-actions">
+        <button class="finish-button compact" data-load-weborder="${order.id}">Cargar al sistema</button>
+        <button class="coral-button compact" data-dismiss-weborder="${order.id}">Descartar</button>
+      </div>
+    </article>
+  `;
+}
+
+async function fetchWebOrders() {
+  webOrdersStatus = 'Cargando pedidos...';
+  render();
+  const { data, error } = await supabase
+    .from('web_orders')
+    .select('*')
+    .neq('status', 'descartado')
+    .neq('status', 'cargado')
+    .order('created_at', { ascending: false })
+    .limit(80);
+  if (error) {
+    webOrdersStatus = `No se pudo cargar (${error.message}).`;
+  } else {
+    webOrders = data || [];
+    webOrdersStatus = webOrders.length ? '' : 'No hay pedidos web nuevos por ahora.';
+  }
+  render();
+}
+
+async function dismissWebOrder(id) {
+  await supabase.from('web_orders').update({ status: 'descartado' }).eq('id', id);
+  webOrders = webOrders.filter((o) => o.id !== id);
+  render();
+}
+
+async function loadWebOrderToSystem(id) {
+  const order = webOrders.find((o) => o.id === id);
+  if (!order) return;
+  let draft = createOrderDraft({
+    orderNumber: nextOrderNumber(),
+    exchangeRate: state.settings.exchangeRate,
+    channel: state.settings.channel,
+    location: state.settings.location
+  });
+  draft = {
+    ...draft,
+    customerName: order.customer_name || '',
+    notes: `Pedido web · Tel: ${order.customer_phone || '—'} · Dir: ${order.address || '—'}`
+  };
+  (Array.isArray(order.items) ? order.items : []).forEach((it) => {
+    const found = state.products.find((p) => p.id === it.id);
+    const product = found || {
+      id: it.id || `web-${crypto.randomUUID()}`,
+      sku: '',
+      name: it.name || 'Producto',
+      unit: it.baseUnit || it.unit || 'Kg',
+      priceUsd: Number(it.price || 0),
+      estimatedCostUsd: 0,
+      controlMode: 'on_demand',
+      supplierName: ''
+    };
+    const priced = { ...product, priceUsd: Number(it.price ?? productPrice(product, draft.channel)) };
+    draft = addItemToOrder(draft, priced, Number(it.baseQty ?? it.qty ?? 1));
+  });
+  currentOrder = draft;
+  await supabase.from('web_orders').update({ status: 'cargado' }).eq('id', id);
+  webOrders = webOrders.filter((o) => o.id !== id);
+  activeView = 'checkout';
+  render();
+}
+
 function renderReceivables() {
   const list = state.receivables;
   const summary = receivablesSummary(list);
@@ -2396,8 +2509,17 @@ function bindEvents() {
       activeView = button.dataset.view;
       selectedAccountId = null;
       render();
+      if (activeView === 'weborders') fetchWebOrders();
     });
   });
+
+  document.querySelector('[data-action="refresh-weborders"]')?.addEventListener('click', fetchWebOrders);
+  document.querySelectorAll('[data-load-weborder]').forEach((b) =>
+    b.addEventListener('click', () => loadWebOrderToSystem(b.dataset.loadWeborder))
+  );
+  document.querySelectorAll('[data-dismiss-weborder]').forEach((b) =>
+    b.addEventListener('click', () => dismissWebOrder(b.dataset.dismissWeborder))
+  );
 
   document.querySelectorAll('[data-product-id]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -2484,9 +2606,8 @@ function bindEvents() {
     localStorage.clear();
     location.reload();
   });
-  document.querySelector('[data-action="logout"]')?.addEventListener('click', () => {
-    sessionStorage.removeItem('veggies_auth');
-    sessionStorage.removeItem('veggies_user');
+  document.querySelector('[data-action="logout"]')?.addEventListener('click', async () => {
+    await supabase.auth.signOut();
     location.href = '/admin/';
   });
 
