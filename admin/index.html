@@ -79,9 +79,15 @@
             err.textContent = error.message || 'No se pudo entrar.';
           }
           btn.disabled = false; btn.textContent = 'Entrar';
-        } else {
-          location.href = 'sistema/';
+          return;
         }
+        // Esperar a que la sesion quede guardada antes de ir al sistema (evita el bucle).
+        for (let i = 0; i < 12; i++) {
+          const { data } = await supabase.auth.getSession();
+          if (data.session) break;
+          await new Promise((r) => setTimeout(r, 120));
+        }
+        location.href = 'sistema/';
       });
     </script>
   </body>

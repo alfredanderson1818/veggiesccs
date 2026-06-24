@@ -26,8 +26,18 @@
     <div id="root"></div>
     <script type="module">
       // Guardia: solo carga la app si hay sesion de Supabase.
+      // Reintenta leer la sesion (puede tardar en restaurarse del storage) para
+      // evitar un bucle login <-> sistema cuando la sesion aun no esta lista.
       import { supabase } from '/src/supabase/client.mjs';
-      const { data: { session } } = await supabase.auth.getSession();
+      async function getSessionSafe() {
+        for (let i = 0; i < 12; i++) {
+          const { data } = await supabase.auth.getSession();
+          if (data.session) return data.session;
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        return null;
+      }
+      const session = await getSessionSafe();
       if (!session) {
         location.replace('/admin/');
       } else {
