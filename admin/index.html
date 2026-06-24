@@ -70,7 +70,14 @@
         const password = document.getElementById('pass').value;
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-          err.textContent = 'Correo o contraseña incorrectos.';
+          const m = (error.message || '').toLowerCase();
+          if (m.includes('not confirmed')) {
+            err.textContent = 'Tu usuario existe pero no esta confirmado. Confirmalo en Supabase (Authentication → Users).';
+          } else if (m.includes('invalid login')) {
+            err.textContent = 'Correo o contrasena incorrectos (o el usuario no existe).';
+          } else {
+            err.textContent = error.message || 'No se pudo entrar.';
+          }
           btn.disabled = false; btn.textContent = 'Entrar';
         } else {
           location.href = 'sistema/';
