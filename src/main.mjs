@@ -200,6 +200,47 @@ function restoreFocus(snapshot) {
   }
 }
 
+const SECTIONS = [
+  { key: 'inicio', label: 'Inicio', ic: '🏠', views: [['dashboard', 'Resumen']] },
+  { key: 'ventas', label: 'Ventas', ic: '🛒', views: [['pos', 'Punto de venta'], ['weborders', 'Pedidos web'], ['import', 'Importar factura'], ['galpon', 'Galpon'], ['documents', 'Documentos']] },
+  { key: 'catalogo', label: 'Catalogo', ic: '🥬', views: [['catalog', 'Productos'], ['inventory', 'Inventario']] },
+  { key: 'clientes', label: 'Clientes', ic: '👥', views: [['customers', 'Cartera'], ['receivables', 'Creditos']] },
+  { key: 'finanzas', label: 'Finanzas', ic: '💵', views: [['accounts', 'Cuentas y caja'], ['reports', 'Reportes'], ['rates', 'Tasa BCV']] }
+];
+const HIDDEN_VIEW_SECTION = { checkout: 'ventas' };
+
+function sectionForView(view) {
+  const s = SECTIONS.find((sec) => sec.views.some(([v]) => v === view));
+  if (s) return s;
+  return SECTIONS.find((sec) => sec.key === HIDDEN_VIEW_SECTION[view]) || SECTIONS[0];
+}
+
+function currentViewLabel() {
+  for (const sec of SECTIONS) {
+    const f = sec.views.find(([v]) => v === activeView);
+    if (f) return f[1];
+  }
+  return activeView === 'checkout' ? 'Pedido' : 'Panel';
+}
+
+function renderSidebarNav() {
+  const activeKey = sectionForView(activeView).key;
+  return SECTIONS.map(
+    (sec) => `
+      <button class="nav-section ${sec.key === activeKey ? 'active' : ''}" data-section="${sec.key}">
+        <span class="nav-ic">${sec.ic}</span><span class="nav-label">${sec.label}</span>
+      </button>`
+  ).join('');
+}
+
+function renderSubtabs() {
+  const sec = sectionForView(activeView);
+  if (!sec || sec.views.length < 2 || activeView === 'checkout') return '';
+  return `<div class="subtabs">${sec.views
+    .map(([v, label]) => `<button class="subtab ${v === activeView ? 'active' : ''}" data-view="${v}">${label}</button>`)
+    .join('')}</div>`;
+}
+
 function render() {
   const focusSnapshot = captureFocus();
   const totals = calculateOrderTotals(currentOrder);
@@ -211,19 +252,7 @@ function render() {
           <img src="/src/assets/logo-veggies.png" alt="Veggies CCS" class="brand-logo" />
         </div>
         <p class="eyebrow">Modulos</p>
-        ${navButton('dashboard', 'Home', 'Resumen')}
-        ${navButton('pos', 'Pedidos', 'Nuevo pedido')}
-        ${navButton('weborders', 'Pedidos web', 'Desde la pagina')}
-        ${navButton('import', 'Importar', 'Factura proveedor')}
-        ${navButton('galpon', 'Galpon', 'Preparacion')}
-        ${navButton('catalog', 'Catalogo', 'Productos')}
-        ${navButton('inventory', 'Inventario', 'Stock y kardex')}
-        ${navButton('reports', 'Reportes', 'Ventas y utilidad')}
-        ${navButton('rates', 'Tasa', 'BCV y redondeo')}
-        ${navButton('documents', 'Documentos', 'Facturas y notas')}
-        ${navButton('customers', 'Clientes', 'Cartera')}
-        ${navButton('receivables', 'Creditos', 'Cuentas x cobrar')}
-        ${navButton('accounts', 'Cuentas', 'Pagos')}
+        ${renderSidebarNav()}
         <div class="sidebar-footer">
           <button class="ghost-button" data-action="reset-storage">Reiniciar demo</button>
           <button class="ghost-button" data-action="logout">Cerrar sesion</button>
@@ -233,17 +262,15 @@ function render() {
       <main class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Veggies CCS</p>
-            <h1>${activeView === 'pos' ? 'Punto de venta' : 'Panel operativo'}</h1>
+            <p class="eyebrow">${sectionForView(activeView).label}</p>
+            <h1>${currentViewLabel()}</h1>
           </div>
           <div class="top-actions">
-            <button class="primary-button" data-view="pos">Vender</button>
-            <button class="ghost-button" data-view="import">Importar factura</button>
-            <button class="coral-button" data-action="quick-expense">Agregar gasto</button>
+            <button class="primary-button" data-view="pos">+ Nueva venta</button>
           </div>
         </header>
-        ${activeView === 'checkout' ? '' : renderDashboard(metrics)}
-        ${activeView === 'dashboard' ? renderHome() : ''}
+        ${renderSubtabs()}
+        ${activeView === 'dashboard' ? renderDashboard(metrics) + renderHome() : ''}
         ${activeView === 'checkout' ? renderCheckout(totals) : ''}
         ${activeView === 'pos' ? renderPos(totals) : ''}
         ${activeView === 'weborders' ? renderWebOrders() : ''}
@@ -2510,6 +2537,21 @@ function bindEvents() {
       selectedAccountId = null;
       render();
       if (activeView === 'weborders') fetchWebOrders();
+    });
+  });
+
+  document.querySelectorAll('[data-section]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const sec = SECTIONS.find((s) => s.key === button.dataset.section);
+      if (!sec) return;
+      // Si ya estas en esa seccion, no cambies de sub-vista; solo entra a su primera vista.
+      const inSection = sec.views.some(([v]) => v === activeView);
+      if (!inSection) {
+        activeView = sec.views[0][0];
+        selectedAccountId = null;
+        render();
+        if (activeView === 'weborders') fetchWebOrders();
+      }
     });
   });
 
