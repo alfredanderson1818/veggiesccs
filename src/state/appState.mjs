@@ -1,6 +1,43 @@
 import { products, paymentMethods, accounts, defaultSettings, customers } from '../data/seed.mjs';
 import { loadValue, saveValue } from './storage.mjs';
 
+// Claves del estado que se persisten y sincronizan (fuente unica de verdad).
+export const STATE_KEYS = [
+  'products',
+  'customers',
+  'paymentMethods',
+  'accounts',
+  'accountMovements',
+  'inventoryMovements',
+  'documents',
+  'returns',
+  'receivables',
+  'rateHistory',
+  'rateAudit',
+  'settings',
+  'orders',
+  'supplierOrders'
+];
+
+// Snapshot serializable del estado (para subir a la nube).
+export function serializeState(state) {
+  const out = {};
+  STATE_KEYS.forEach((key) => {
+    out[key] = state[key];
+  });
+  return out;
+}
+
+// Vuelca un snapshot remoto sobre el estado en memoria (mutacion in-place;
+// `state` es const en main.mjs, por eso no se reasigna, se mutan sus claves).
+export function hydrateState(state, data) {
+  if (!data || typeof data !== 'object') return state;
+  STATE_KEYS.forEach((key) => {
+    if (data[key] !== undefined) state[key] = data[key];
+  });
+  return state;
+}
+
 export function loadInitialState() {
   return {
     products: loadValue('products', products),

@@ -699,6 +699,84 @@ textarea:focus {
   color: var(--muted);
 }
 
+/* ---- Pago mixto ---- */
+.mixed-pay {
+  display: grid;
+  gap: 8px;
+}
+.mixed-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+}
+.mixed-meta strong {
+  display: block;
+  font-size: 14px;
+}
+.mixed-meta small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.mixed-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mixed-input > span {
+  color: var(--muted);
+  font-weight: 700;
+}
+.mixed-input input {
+  width: 92px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  text-align: right;
+}
+.mixed-fill {
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mixed-fill:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.mixed-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--panel-soft);
+  font-size: 13px;
+}
+.mixed-status strong {
+  color: var(--muted);
+}
+.mixed-status.ok {
+  background: var(--brand-soft);
+}
+.mixed-status.ok strong {
+  color: var(--brand-strong, var(--brand));
+}
+.mixed-status.over strong {
+  color: var(--coral, #d84b5d);
+}
+
 .totals-box {
   display: grid;
   gap: 10px;

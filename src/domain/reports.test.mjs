@@ -82,6 +82,35 @@ test('groups sales by payment method', () => {
   assert.equal(rows[0].salesUsd, 300);
 });
 
+test('attributes each mixed-payment split to its own method', () => {
+  const mixedOrders = [
+    {
+      id: 'm1',
+      status: 'paid',
+      date: '2026-06-03',
+      payment: {
+        methodName: 'Mixto',
+        splits: [
+          { methodName: 'Zelle', amountUsd: 30 },
+          { methodName: 'Efectivo $', amountUsd: 20 }
+        ]
+      },
+      totals: { totalUsd: 50 },
+      items: []
+    }
+  ];
+  const rows = salesByPaymentMethod(mixedOrders);
+  const zelle = rows.find((r) => r.method === 'Zelle');
+  const efectivo = rows.find((r) => r.method === 'Efectivo $');
+  assert.equal(zelle.salesUsd, 30);
+  assert.equal(efectivo.salesUsd, 20);
+  // No aparece una fila "Mixto": cada parcial va a su metodo.
+  assert.equal(
+    rows.some((r) => r.method === 'Mixto'),
+    false
+  );
+});
+
 test('ranks top products by quantity sold', () => {
   const rows = topProducts(orders);
   assert.equal(rows[0].name, 'Aceite');

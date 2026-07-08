@@ -105,4 +105,34 @@ test('finalizes paid order with payment snapshot and immutable totals', () => {
   assert.equal(finalized.payment.methodName, 'Pago Movil');
   assert.equal(finalized.payment.amountVes, 510.91);
   assert.equal(finalized.totals.totalUsd, 0.9);
+  assert.equal(finalized.payment.splits, null);
+});
+
+test('finalizes with mixed payment splits (per-split USD and Bs)', () => {
+  let order = createOrderDraft({
+    orderNumber: 585,
+    exchangeRate: { value: 567.68, source: 'manual', date: '2026-06-08' }
+  });
+  order = addItemToOrder(order, products.onDemand, 10); // 10 * 0.9 = 9.00
+
+  const finalized = finalizeOrder(order, {
+    methodId: 'mixto',
+    methodName: 'Mixto',
+    amountUsd: 9,
+    splits: [
+      { methodId: 'zelle', methodName: 'Zelle', accountId: 'acc-usd', currency: 'USD', amountUsd: 6 },
+      { methodId: 'bs', methodName: 'Caja Bs', accountId: 'acc-ves', currency: 'VES', amountUsd: 3 },
+      { methodId: 'x', methodName: 'Vacio', accountId: 'acc-x', currency: 'USD', amountUsd: 0 }
+    ]
+  });
+
+  assert.equal(finalized.payment.methodName, 'Mixto');
+  assert.equal(finalized.payment.splits.length, 2); // el parcial en 0 se descarta
+  const [s0, s1] = finalized.payment.splits;
+  assert.equal(s0.methodName, 'Zelle');
+  assert.equal(s0.amountUsd, 6);
+  assert.equal(s1.currency, 'VES');
+  assert.equal(s1.amountVes, 1703.04); // 3 * 567.68
+  const sumUsd = finalized.payment.splits.reduce((acc, s) => acc + s.amountUsd, 0);
+  assert.equal(sumUsd, finalized.totals.totalUsd);
 });

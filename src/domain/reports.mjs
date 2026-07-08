@@ -58,12 +58,20 @@ export function salesByChannel(orders) {
 
 export function salesByPaymentMethod(orders) {
   const map = new Map();
-  paidOrders(orders).forEach((order) => {
-    const key = order.payment?.methodName || 'Sin metodo';
+  const add = (key, salesUsd, countOnce) => {
     const row = map.get(key) || { method: key, count: 0, salesUsd: 0 };
-    row.count += 1;
-    row.salesUsd += order.totals.totalUsd;
+    if (countOnce) row.count += 1;
+    row.salesUsd += salesUsd;
     map.set(key, row);
+  };
+  paidOrders(orders).forEach((order) => {
+    const splits = order.payment?.splits;
+    if (Array.isArray(splits) && splits.length) {
+      // Pago mixto: cada parcial suma a su propio metodo.
+      splits.forEach((s, i) => add(s.methodName || 'Sin metodo', Number(s.amountUsd || 0), i === 0));
+    } else {
+      add(order.payment?.methodName || 'Sin metodo', order.totals.totalUsd, true);
+    }
   });
   return sortByKeyDesc(
     Array.from(map.values()).map((row) => ({ ...row, salesUsd: roundMoney(row.salesUsd) })),

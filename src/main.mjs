@@ -61,8 +61,17 @@ import {
   buildPreInvoiceRows,
   preInvoiceTotals
 } from './domain/invoiceImport.mjs';
-import { loadInitialState, persistState } from './state/appState.mjs';
+import { loadInitialState, persistState, serializeState, hydrateState } from './state/appState.mjs';
 import { supabase } from './supabase/client.mjs';
+import {
+  getClientId,
+  getSyncedAt,
+  setSyncedAt,
+  isNewer,
+  pullRemoteState,
+  pushRemoteState,
+  subscribeRemoteState
+} from './state/cloudSync.mjs';
 
 const root = document.querySelector('#root');
 const state = loadInitialState();
@@ -75,7 +84,8 @@ let importState = { rawText: '', rows: [], status: '', marginPct: 30, busy: fals
 let customerSearch = '';
 let accountModal = null;
 let customerQuery = '';
-let paymentMode = 'contado'; // 'contado' | 'credito'
+let paymentMode = 'contado'; // 'contado' | 'mixto' | 'credito'
+let mixedAmounts = {}; // { [methodId]: montoUsdString } para pago mixto
 let selectedAccountId = null;
 let webOrders = [];
 let webOrdersStatus = '';
@@ -93,7 +103,94 @@ function nextOrderNumber() {
 function setState(mutator) {
   mutator();
   persistState(state);
+  scheduleCloudPush();
   render();
+}
+
+// ---- Sincronizacion en la nube ----
+// Version = updated_at del servidor (reloj monotono => convergencia determinista).
+let cloudPushTimer = null;
+let cloudSyncing = false; // true mientras adopto un estado remoto (evita re-subirlo)
+let cloudReady = false; // true tras el primer pull/push del arranque
+let cloudDirty = false; // hay cambios locales aun sin subir
+
+function scheduleCloudPush() {
+  cloudDirty = true; // se registra SIEMPRE, aun antes de cloudReady, para no perderlo
+  if (cloudSyncing || !cloudReady) return;
+  if (cloudPushTimer) clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(cloudPushNow, 1200);
+}
+
+async function cloudPushNow() {
+  if (cloudPushTimer) {
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = null;
+  }
+  cloudDirty = false; // subimos el estado actual; si algo cambia durante el await se remarca
+  try {
+    const ts = await pushRemoteState(serializeState(state));
+    setSyncedAt(ts);
+  } catch (err) {
+    cloudDirty = true; // no se subio: sigue pendiente
+    console.warn('Sync: no se pudo subir el estado —', err?.message || err);
+  }
+}
+
+function adoptRemoteState(remote) {
+  // Cancela cualquier push pendiente: adoptamos el remoto, no re-subimos lo viejo.
+  if (cloudPushTimer) {
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = null;
+  }
+  cloudSyncing = true;
+  try {
+    hydrateState(state, remote.data);
+    setSyncedAt(remote.updatedAt);
+    cloudDirty = false;
+    // Reconciliar estado derivado que pudo quedar apuntando a algo inexistente.
+    if (!state.paymentMethods.find((m) => m.id === selectedPaymentMethod)) {
+      selectedPaymentMethod = state.paymentMethods[0]?.id ?? null;
+    }
+    // Recalcular el numero de pedido del borrador contra las ordenes ya adoptadas
+    // (evita numeros correlativos duplicados) y refrescar la tasa.
+    currentOrder = {
+      ...currentOrder,
+      orderNumber: nextOrderNumber(),
+      exchangeRate: state.settings.exchangeRate
+    };
+    persistState(state);
+    render();
+  } finally {
+    cloudSyncing = false; // pase lo que pase, el sync no queda bloqueado
+  }
+}
+
+async function initCloudSync() {
+  try {
+    const remote = await pullRemoteState();
+    if (remote && isNewer(remote.updatedAt, getSyncedAt()) && !cloudDirty) {
+      // El remoto es mas nuevo y no edite nada durante el arranque: lo adoptamos.
+      adoptRemoteState(remote);
+    } else {
+      // No hay remoto, el local es igual/mas nuevo, o el usuario ya edito durante
+      // el arranque (cloudDirty): subimos el local para NO perder ese trabajo.
+      await cloudPushNow();
+    }
+    cloudReady = true;
+    if (cloudDirty) scheduleCloudPush(); // ediciones que quedaron pendientes en el arranque
+    // Escuchar cambios de otros dispositivos.
+    subscribeRemoteState((incoming) => {
+      if (incoming.clientId === getClientId()) {
+        // Eco de mi propio cambio: solo alineo la version.
+        if (isNewer(incoming.updatedAt, getSyncedAt())) setSyncedAt(incoming.updatedAt);
+        return;
+      }
+      if (isNewer(incoming.updatedAt, getSyncedAt())) adoptRemoteState(incoming);
+    });
+  } catch (err) {
+    cloudReady = true; // seguimos funcionando solo con localStorage
+    console.warn('Sync no disponible (se trabaja local) —', err?.message || err);
+  }
 }
 
 function controlModeLabel(mode) {
@@ -158,7 +255,8 @@ const FOCUS_ATTRS = [
   'data-item-qty',
   'data-supplier-qty',
   'data-supplier-cost',
-  'data-customer-pick'
+  'data-customer-pick',
+  'data-mixed-amount'
 ];
 
 function captureFocus() {
@@ -517,8 +615,7 @@ function renderCustomerField() {
 }
 
 function renderOrderPanel(totals) {
-  const isCredit = paymentMode === 'credito';
-  const canFinalize = currentOrder.items.length && (!isCredit || currentOrder.customerId);
+  const canFinalize = canFinalizeOrder(totals);
   return `
     <aside class="order-panel">
       <div class="panel-title">
@@ -547,21 +644,10 @@ function renderOrderPanel(totals) {
         <div><span>Margen estimado</span><strong>${formatUsd(totals.estimatedMarginUsd)}</strong></div>
         <div class="grand-total"><span>Total</span><strong>${formatUsd(totals.totalUsd)} <small>${formatVes(chargedBs(totals.totalUsd))}</small></strong></div>
       </div>
-      <div class="pay-mode">
-        <button class="pay-mode-btn ${isCredit ? '' : 'active'}" data-pay-mode="contado">Pago de una</button>
-        <button class="pay-mode-btn ${isCredit ? 'active' : ''}" data-pay-mode="credito">Credito</button>
-      </div>
-      ${
-        isCredit
-          ? `<div class="credit-note">${
-              currentOrder.customerId
-                ? `Se registrara como cuenta por cobrar de <strong>${currentOrder.customerName}</strong>.`
-                : 'Selecciona un cliente del sistema para dar credito.'
-            }</div>`
-          : `<div class="payment-methods">${state.paymentMethods.map(renderPaymentMethod).join('')}</div>`
-      }
+      ${renderPayModeTabs()}
+      ${renderPaymentBody(totals)}
       <button class="finish-button" data-action="finalize" ${canFinalize ? '' : 'disabled'}>
-        ${isCredit ? 'Registrar credito' : 'Finalizar pedido'} ${formatUsd(totals.totalUsd)}
+        ${finalizeLabel(totals)}
       </button>
       <button class="expand-button" data-view="checkout" ${currentOrder.items.length ? '' : 'disabled'}>Ver pedido en pantalla completa</button>
       <button class="quote-button" data-action="download-quote" ${currentOrder.items.length ? '' : 'disabled'}>Descargar cotizacion</button>
@@ -570,8 +656,7 @@ function renderOrderPanel(totals) {
 }
 
 function renderCheckout(totals) {
-  const isCredit = paymentMode === 'credito';
-  const canFinalize = currentOrder.items.length && (!isCredit || currentOrder.customerId);
+  const canFinalize = canFinalizeOrder(totals);
   return `
     <section class="checkout-view">
       <div class="checkout-head">
@@ -616,21 +701,10 @@ function renderCheckout(totals) {
             <div><span>Margen estimado</span><strong>${formatUsd(totals.estimatedMarginUsd)}</strong></div>
             <div class="grand-total"><span>Total</span><strong>${formatUsd(totals.totalUsd)} <small>${formatVes(chargedBs(totals.totalUsd))}</small></strong></div>
           </div>
-          <div class="pay-mode">
-            <button class="pay-mode-btn ${isCredit ? '' : 'active'}" data-pay-mode="contado">Pago de una</button>
-            <button class="pay-mode-btn ${isCredit ? 'active' : ''}" data-pay-mode="credito">Credito</button>
-          </div>
-          ${
-            isCredit
-              ? `<div class="credit-note">${
-                  currentOrder.customerId
-                    ? `Se registrara como cuenta por cobrar de <strong>${currentOrder.customerName}</strong>.`
-                    : 'Selecciona un cliente del sistema para dar credito.'
-                }</div>`
-              : `<div class="payment-methods">${state.paymentMethods.map(renderPaymentMethod).join('')}</div>`
-          }
+          ${renderPayModeTabs()}
+          ${renderPaymentBody(totals)}
           <button class="finish-button" data-action="finalize" ${canFinalize ? '' : 'disabled'}>
-            ${isCredit ? 'Registrar credito' : 'Finalizar pedido'} ${formatUsd(totals.totalUsd)}
+            ${finalizeLabel(totals)}
           </button>
           <button class="quote-button" data-action="download-quote" ${currentOrder.items.length ? '' : 'disabled'}>Descargar cotizacion</button>
         </aside>
@@ -673,6 +747,102 @@ function renderPaymentMethod(method) {
       <small>${method.accountName}</small>
     </button>
   `;
+}
+
+// ---- Pago mixto: reparto del total entre varios metodos ----
+// Redondea a centavos para que la cobertura valide EXACTO lo que se abona.
+function parseAmount(value) {
+  const n = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? roundMoney(n) : 0;
+}
+// Metodos que se pueden usar en un pago mixto: los que representan UNA cuenta y
+// moneda real (USD o VES). Excluye pseudo-metodos como "Pago Combinado" (MIXED).
+function mixablePaymentMethods() {
+  return state.paymentMethods.filter((m) => m.currency === 'USD' || m.currency === 'VES');
+}
+function mixedTotalUsd() {
+  return roundMoney(mixablePaymentMethods().reduce((sum, m) => sum + parseAmount(mixedAmounts[m.id]), 0));
+}
+function mixedRemainingUsd(totalUsd) {
+  return roundMoney(Number(totalUsd || 0) - mixedTotalUsd());
+}
+function mixedCovered(totalUsd) {
+  return mixedTotalUsd() > 0 && Math.abs(mixedRemainingUsd(totalUsd)) < 0.01;
+}
+function canFinalizeOrder(totals) {
+  if (!currentOrder.items.length) return false;
+  if (paymentMode === 'credito') return Boolean(currentOrder.customerId);
+  if (paymentMode === 'mixto') return mixedCovered(totals.totalUsd);
+  return true;
+}
+function finalizeLabel(totals) {
+  if (paymentMode === 'credito') return `Registrar credito ${formatUsd(totals.totalUsd)}`;
+  if (paymentMode === 'mixto') return `Finalizar mixto ${formatUsd(totals.totalUsd)}`;
+  return `Finalizar pedido ${formatUsd(totals.totalUsd)}`;
+}
+function renderPayModeTabs() {
+  const modes = [
+    ['contado', 'Pago de una'],
+    ['mixto', 'Mixto'],
+    ['credito', 'Credito']
+  ];
+  return `<div class="pay-mode">${modes
+    .map(
+      ([m, label]) =>
+        `<button class="pay-mode-btn ${paymentMode === m ? 'active' : ''}" data-pay-mode="${m}">${label}</button>`
+    )
+    .join('')}</div>`;
+}
+function renderMixedPay(totals) {
+  const remaining = mixedRemainingUsd(totals.totalUsd);
+  const covered = mixedCovered(totals.totalUsd);
+  const statusClass = covered ? 'ok' : remaining < 0 ? 'over' : '';
+  const statusText = covered
+    ? 'Pago completo ✓'
+    : remaining < 0
+      ? `Te pasaste por ${formatUsd(Math.abs(remaining))}`
+      : `Falta ${formatUsd(remaining)}`;
+  return `
+    <div class="mixed-pay">
+      ${mixablePaymentMethods()
+        .map(
+          (m) => `
+        <div class="mixed-row">
+          <div class="mixed-meta"><strong>${m.name}</strong><small>${m.accountName} · ${m.currency}</small></div>
+          <div class="mixed-input">
+            <span>$</span>
+            <input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"
+              value="${mixedAmounts[m.id] ?? ''}" data-mixed-amount="${m.id}" />
+            <button type="button" class="mixed-fill" data-mixed-fill="${m.id}" title="Asignar lo que falta">resto</button>
+          </div>
+        </div>`
+        )
+        .join('')}
+      <div class="mixed-status ${statusClass}">
+        <span>Asignado ${formatUsd(mixedTotalUsd())} / ${formatUsd(totals.totalUsd)}</span>
+        <strong>${statusText}</strong>
+      </div>
+    </div>`;
+}
+function renderPaymentBody(totals) {
+  if (paymentMode === 'credito') {
+    return `<div class="credit-note">${
+      currentOrder.customerId
+        ? `Se registrara como cuenta por cobrar de <strong>${currentOrder.customerName}</strong>.`
+        : 'Selecciona un cliente del sistema para dar credito.'
+    }</div>`;
+  }
+  if (paymentMode === 'mixto') return renderMixedPay(totals);
+  return `<div class="payment-methods">${state.paymentMethods.map(renderPaymentMethod).join('')}</div>`;
+}
+
+// Texto legible del pago para recibos/detalle (desglosa el mixto).
+function paymentSummaryText(payment) {
+  if (!payment) return '';
+  if (Array.isArray(payment.splits) && payment.splits.length) {
+    return payment.splits.map((s) => `${s.methodName} ${formatUsd(s.amountUsd)}`).join(' · ');
+  }
+  return payment.methodName || '';
 }
 
 function renderCatalog() {
@@ -1221,7 +1391,11 @@ function documentHtml(doc) {
     <table class="totals"><tbody>${totalsRows}</tbody></table>
     ${
       showPayment
-        ? `<div class="pay"><strong>Pago:</strong> ${doc.payment.methodName} · ${formatUsd(doc.payment.amountUsd)}${doc.payment.amountVes ? ` / ${formatVes(doc.payment.amountVes)}` : ''}</div>`
+        ? `<div class="pay"><strong>Pago:</strong> ${
+            Array.isArray(doc.payment.splits) && doc.payment.splits.length
+              ? paymentSummaryText(doc.payment)
+              : `${doc.payment.methodName} · ${formatUsd(doc.payment.amountUsd)}${doc.payment.amountVes ? ` / ${formatVes(doc.payment.amountVes)}` : ''}`
+          }</div>`
         : ''
     }
     <p class="foot">${footer}</p>
@@ -1259,7 +1433,7 @@ function thermalPrint(orderId) {
     <div class="line"></div>
     <div class="total"><span>TOTAL</span><span>${formatUsd(t.totalUsd)}</span></div>
     <div class="trow"><span>Equivalente</span><b>${formatVes(t.totalVes || t.totalUsd * (order.exchangeRate?.value || 0))}</b></div>
-    ${order.payment ? `<div class="trow"><span>Pago</span><b>${order.payment.methodName}</b></div>` : ''}
+    ${order.payment ? `<div class="trow"><span>Pago</span><b>${paymentSummaryText(order.payment)}</b></div>` : ''}
     <div class="line"></div>
     <div class="center muted">Gracias por su compra</div>
     </body></html>`;
@@ -1300,17 +1474,36 @@ function annulOrderById(orderId) {
   const reversalNote = `Anulacion Pedido #${order.orderNumber}`;
 
   setState(() => {
-    // Reversa de caja
-    if (method && order.payment) {
-      const amount = method.currency === 'VES' ? order.payment.amountVes : order.payment.amountUsd;
-      const reversal = createAdjustmentMovement({
-        accountId: method.accountId,
-        amount: -Number(amount || 0),
-        currency: method.currency === 'VES' ? 'VES' : 'USD',
-        note: reversalNote
-      });
-      state.accountMovements = [reversal, ...state.accountMovements];
-      state.accounts = applyMovements(state.accounts, [reversal]);
+    // Reversa de caja: por cada parcial (mixto) o por el metodo unico.
+    const reversalSources =
+      Array.isArray(order.payment?.splits) && order.payment.splits.length
+        ? order.payment.splits.map((s) => ({
+            accountId: s.accountId,
+            currency: s.currency,
+            amount: s.currency === 'VES' ? s.amountVes : s.amountUsd
+          }))
+        : method && order.payment
+          ? [
+              {
+                accountId: method.accountId,
+                currency: method.currency === 'VES' ? 'VES' : 'USD',
+                amount: method.currency === 'VES' ? order.payment.amountVes : order.payment.amountUsd
+              }
+            ]
+          : [];
+    const reversals = reversalSources
+      .filter((r) => r.accountId)
+      .map((r) =>
+        createAdjustmentMovement({
+          accountId: r.accountId,
+          amount: -Number(r.amount || 0),
+          currency: r.currency,
+          note: reversalNote
+        })
+      );
+    if (reversals.length) {
+      state.accountMovements = [...reversals, ...state.accountMovements];
+      state.accounts = applyMovements(state.accounts, reversals);
     }
     // Reversa de inventario (devuelve stock de inventariables)
     const returnMovements = createReturnMovements(order.items, reversalNote);
@@ -2625,6 +2818,26 @@ function bindEvents() {
   document.querySelectorAll('[data-pay-mode]').forEach((button) => {
     button.addEventListener('click', () => {
       paymentMode = button.dataset.payMode;
+      if (paymentMode !== 'mixto') mixedAmounts = {};
+      render();
+    });
+  });
+  document.querySelectorAll('[data-mixed-amount]').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      mixedAmounts = { ...mixedAmounts, [input.dataset.mixedAmount]: event.target.value };
+      render();
+    });
+  });
+  document.querySelectorAll('[data-mixed-fill]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.mixedFill;
+      const totalUsd = calculateOrderTotals(currentOrder).totalUsd;
+      const others = mixablePaymentMethods().reduce(
+        (sum, m) => (m.id === id ? sum : sum + parseAmount(mixedAmounts[m.id])),
+        0
+      );
+      const fill = roundMoney(Math.max(0, Number(totalUsd || 0) - others));
+      mixedAmounts = { ...mixedAmounts, [id]: fill ? String(fill) : '' };
       render();
     });
   });
@@ -2811,31 +3024,54 @@ function handleFieldChange(event) {
       state.settings.exchangeRate = currentOrder.exchangeRate;
     }
     persistState(state);
+    scheduleCloudPush();
     render();
     return;
   }
   persistState(state);
+  scheduleCloudPush();
   render();
 }
 
 function finalizeCurrentOrder() {
   const isCredit = paymentMode === 'credito';
+  const isMixed = paymentMode === 'mixto';
   if (isCredit && !currentOrder.customerId) {
     window.alert('Selecciona un cliente del sistema para registrar el credito.');
     return;
   }
 
   const totals = calculateOrderTotals(currentOrder);
-  const method = isCredit
+
+  if (isMixed && !mixedCovered(totals.totalUsd)) {
+    window.alert('El pago mixto no cubre el total del pedido.');
+    return;
+  }
+
+  // Parciales del pago mixto: uno por cada metodo (real) con monto > 0.
+  const splits = isMixed
+    ? mixablePaymentMethods()
+        .filter((m) => parseAmount(mixedAmounts[m.id]) > 0)
+        .map((m) => ({
+          methodId: m.id,
+          methodName: m.name,
+          accountId: m.accountId,
+          currency: m.currency,
+          amountUsd: parseAmount(mixedAmounts[m.id])
+        }))
+    : null;
+
+  const singleMethod = isCredit
     ? { id: 'credito', name: 'Credito', currency: 'USD', accountId: null }
-    : state.paymentMethods.find((item) => item.id === selectedPaymentMethod);
+    : state.paymentMethods.find((item) => item.id === selectedPaymentMethod) || state.paymentMethods[0];
 
   const paid = finalizeOrder(currentOrder, {
-    methodId: method.id,
-    methodName: method.name,
+    methodId: isMixed ? 'mixto' : singleMethod.id,
+    methodName: isMixed ? 'Mixto' : singleMethod.name,
     amountUsd: totals.totalUsd,
     reference: '',
-    credit: isCredit
+    credit: isCredit,
+    splits
   });
   // Aplica el redondeo configurable de Bs al monto cobrado y al total del documento.
   const roundedVes = applyBsRounding(paid.payment.amountVes, state.settings.bsRounding);
@@ -2854,15 +3090,33 @@ function finalizeCurrentOrder() {
       // Venta a credito: no entra dinero todavia, se crea la cuenta por cobrar.
       const customer = state.customers.find((c) => c.id === currentOrder.customerId);
       state.receivables = [createReceivable({ order: paid, customer }), ...state.receivables];
+    } else if (isMixed) {
+      // Pago mixto: un movimiento de caja por cada parcial, a su cuenta destino.
+      const movements = (paid.payment.splits || []).map((s) => {
+        const amount =
+          s.currency === 'VES' ? applyBsRounding(s.amountVes, state.settings.bsRounding) : s.amountUsd;
+        // Refleja en el parcial el Bs realmente abonado (para una reversa exacta).
+        if (s.currency === 'VES') s.amountVes = amount;
+        return createPaymentMovement({
+          accountId: s.accountId,
+          orderId: paid.id,
+          orderNumber: paid.orderNumber,
+          amount,
+          currency: s.currency,
+          methodName: s.methodName
+        });
+      });
+      state.accountMovements = [...movements, ...state.accountMovements];
+      state.accounts = applyMovements(state.accounts, movements);
     } else {
-      const accountAmount = method.currency === 'VES' ? roundedVes : paid.payment.amountUsd;
+      const accountAmount = singleMethod.currency === 'VES' ? roundedVes : paid.payment.amountUsd;
       const paymentMovement = createPaymentMovement({
-        accountId: method.accountId,
+        accountId: singleMethod.accountId,
         orderId: paid.id,
         orderNumber: paid.orderNumber,
         amount: accountAmount,
-        currency: method.currency === 'VES' ? 'VES' : 'USD',
-        methodName: method.name
+        currency: singleMethod.currency === 'VES' ? 'VES' : 'USD',
+        methodName: singleMethod.name
       });
       state.accountMovements = [paymentMovement, ...state.accountMovements];
       state.accounts = applyMovements(state.accounts, [paymentMovement]);
@@ -2876,6 +3130,7 @@ function finalizeCurrentOrder() {
     });
     customerQuery = '';
     paymentMode = 'contado';
+    mixedAmounts = {};
   });
 }
 
@@ -2910,3 +3165,5 @@ function downloadQuote() {
 }
 
 render();
+// Arranca la sincronizacion en la nube despues del primer render (no bloquea el arranque).
+initCloudSync();

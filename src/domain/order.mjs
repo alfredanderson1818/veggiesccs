@@ -111,16 +111,35 @@ export function getFulfillmentImpact(product, quantity) {
   };
 }
 
+// Normaliza los pagos parciales (mixto): cada uno lleva su monto en USD y su
+// equivalente en Bs a la tasa del pedido, para alimentar la cuenta destino.
+export function normalizePaymentSplits(splits, rate) {
+  if (!Array.isArray(splits) || splits.length === 0) return null;
+  return splits
+    .filter((s) => Number(s.amountUsd || 0) > 0)
+    .map((s) => ({
+      methodId: s.methodId,
+      methodName: s.methodName,
+      accountId: s.accountId ?? null,
+      currency: s.currency === 'VES' ? 'VES' : 'USD',
+      amountUsd: roundMoney(Number(s.amountUsd || 0)),
+      amountVes: usdToVes(Number(s.amountUsd || 0), rate)
+    }));
+}
+
 export function finalizeOrder(order, payment) {
   const totals = calculateOrderTotals(order);
+  const rate = order.exchangeRate.value;
+  const splits = normalizePaymentSplits(payment.splits, rate);
   return {
     ...order,
     status: 'paid',
     totals,
     payment: {
       ...payment,
+      splits,
       amountUsd: roundMoney(payment.amountUsd),
-      amountVes: usdToVes(payment.amountUsd, order.exchangeRate.value)
+      amountVes: usdToVes(payment.amountUsd, rate)
     },
     finalizedAt: new Date().toISOString()
   };
