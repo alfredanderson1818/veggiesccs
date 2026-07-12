@@ -44,7 +44,7 @@ import {
 } from './domain/reports.mjs';
 import { DOCUMENT_TYPES, createDocument, nextDocumentNumber } from './domain/documents.mjs';
 import { annulOrder } from './domain/returns.mjs';
-import { createReceivable, addAbono, receivableBalance, paidAmount, receivablesSummary } from './domain/receivables.mjs';
+import { createReceivable, addAbono, receivableBalance, paidAmount, receivablesSummary, isOverdue } from './domain/receivables.mjs';
 import { createReturnMovements } from './domain/inventory.mjs';
 import { createAdjustmentMovement } from './domain/accounts.mjs';
 import {
@@ -86,6 +86,13 @@ let accountModal = null;
 let customerQuery = '';
 let paymentMode = 'contado'; // 'contado' | 'mixto' | 'credito'
 let mixedAmounts = {}; // { [methodId]: montoUsdString } para pago mixto
+// Vencimiento del credito: por defecto a 7 dias.
+function defaultCreditDue() {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
+let creditDueDate = defaultCreditDue();
 let selectedAccountId = null;
 let webOrders = [];
 let webOrdersStatus = '';
@@ -256,7 +263,8 @@ const FOCUS_ATTRS = [
   'data-supplier-qty',
   'data-supplier-cost',
   'data-customer-pick',
-  'data-mixed-amount'
+  'data-mixed-amount',
+  'data-credit-due'
 ];
 
 function captureFocus() {
@@ -302,8 +310,8 @@ const SECTIONS = [
   { key: 'inicio', label: 'Inicio', ic: '🏠', views: [['dashboard', 'Resumen']] },
   { key: 'ventas', label: 'Ventas', ic: '🛒', views: [['pos', 'Punto de venta'], ['weborders', 'Pedidos web'], ['import', 'Importar factura'], ['galpon', 'Galpon'], ['documents', 'Documentos']] },
   { key: 'catalogo', label: 'Catalogo', ic: '🥬', views: [['catalog', 'Productos'], ['inventory', 'Inventario']] },
-  { key: 'clientes', label: 'Clientes', ic: '👥', views: [['customers', 'Cartera'], ['receivables', 'Creditos']] },
-  { key: 'finanzas', label: 'Finanzas', ic: '💵', views: [['accounts', 'Cuentas y caja'], ['reports', 'Reportes'], ['rates', 'Tasa BCV']] }
+  { key: 'clientes', label: 'Clientes', ic: '👥', views: [['customers', 'Cartera']] },
+  { key: 'finanzas', label: 'Finanzas', ic: '💵', views: [['accounts', 'Cuentas y caja'], ['receivables', 'Cuentas por cobrar'], ['reports', 'Reportes'], ['rates', 'Tasa BCV']] }
 ];
 const HIDDEN_VIEW_SECTION = { checkout: 'ventas' };
 
@@ -352,7 +360,7 @@ function render() {
         <p class="eyebrow">Modulos</p>
         ${renderSidebarNav()}
         <div class="sidebar-footer">
-          <button class="ghost-button" data-action="reset-storage">Reiniciar demo</button>
+          <button class="ghost-button" data-action="reset-storage">Restablecer este equipo</button>
           <button class="ghost-button" data-action="logout">Cerrar sesion</button>
           <small>Registrado como:<br><strong>${state.settings.userName}</strong></small>
         </div>
@@ -826,11 +834,15 @@ function renderMixedPay(totals) {
 }
 function renderPaymentBody(totals) {
   if (paymentMode === 'credito') {
-    return `<div class="credit-note">${
-      currentOrder.customerId
-        ? `Se registrara como cuenta por cobrar de <strong>${currentOrder.customerName}</strong>.`
-        : 'Selecciona un cliente del sistema para dar credito.'
-    }</div>`;
+    return `
+      <div class="credit-note">${
+        currentOrder.customerId
+          ? `Se registrara como cuenta por cobrar de <strong>${currentOrder.customerName}</strong>.`
+          : 'Selecciona un cliente del sistema para dar credito.'
+      }</div>
+      <label class="credit-due">Fecha limite de pago
+        <input type="date" value="${creditDueDate}" data-credit-due />
+      </label>`;
   }
   if (paymentMode === 'mixto') return renderMixedPay(totals);
   return `<div class="payment-methods">${state.paymentMethods.map(renderPaymentMethod).join('')}</div>`;
@@ -1983,9 +1995,32 @@ async function loadWebOrderToSystem(id) {
 }
 
 function renderReceivables() {
-  const list = state.receivables;
-  const summary = receivablesSummary(list);
+  const today = new Date().toISOString().slice(0, 10);
+  const summary = receivablesSummary(state.receivables, today);
   const statusLabels = { open: 'Pendiente', partial: 'Abonado', paid: 'Pagado' };
+  const daysFromToday = (dateStr) =>
+    Math.round((new Date(dateStr) - new Date(today)) / 86400000);
+
+  // Orden de cobranza: vencidas primero (la mas vieja arriba), luego por vencer,
+  // luego sin fecha; las pagadas al final.
+  const list = [...state.receivables].sort((a, b) => {
+    const rank = (r) => (r.status === 'paid' ? 2 : isOverdue(r, today) ? 0 : 1);
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
+    const da = a.dueDate || '9999-12-31';
+    const db = b.dueDate || '9999-12-31';
+    if (da !== db) return da < db ? -1 : 1;
+    return (b.date || '').localeCompare(a.date || '');
+  });
+
+  const dueCell = (r) => {
+    if (!r.dueDate) return '<span class="muted-cell">Sin fecha</span>';
+    if (r.status === 'paid') return r.dueDate;
+    const diff = daysFromToday(r.dueDate);
+    if (diff < 0) return `<span class="due-badge overdue">${r.dueDate} · hace ${Math.abs(diff)}d</span>`;
+    if (diff === 0) return `<span class="due-badge today">${r.dueDate} · hoy</span>`;
+    return `<span class="due-badge">${r.dueDate} · en ${diff}d</span>`;
+  };
+
   return `
     <section class="customers-panel">
       <div class="section-heading">
@@ -1994,33 +2029,36 @@ function renderReceivables() {
       </div>
       <div class="dashboard-grid">
         ${metricCard('Por cobrar', formatUsd(summary.balanceUsd), `${summary.openCount} creditos abiertos`, 'solid')}
-        ${metricCard('Total a credito', formatUsd(summary.totalUsd), `${summary.totalCount} ventas`, '')}
+        ${metricCard('Vencido', formatUsd(summary.overdueUsd), `${summary.overdueCount} creditos vencidos`, summary.overdueCount ? 'alert' : '')}
         ${metricCard('Cobrado', formatUsd(summary.paidUsd), 'Abonos recibidos', '')}
+        ${metricCard('Total a credito', formatUsd(summary.totalUsd), `${summary.totalCount} ventas`, '')}
       </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Cliente</th><th>Pedido</th><th>Fecha</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th></th>
+            <th>Cliente</th><th>Pedido</th><th>Fecha</th><th>Vence</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th></th>
           </tr></thead>
           <tbody>
             ${
               list.length
                 ? list
-                    .map(
-                      (r) => `
-                        <tr>
+                    .map((r) => {
+                      const overdue = isOverdue(r, today);
+                      return `
+                        <tr class="${overdue ? 'row-overdue' : ''}">
                           <td><strong>${r.customerName}</strong></td>
                           <td>#${r.orderNumber}</td>
                           <td>${r.date}</td>
+                          <td>${dueCell(r)}</td>
                           <td>${formatUsd(r.totalUsd)}</td>
                           <td>${formatUsd(paidAmount(r))}</td>
                           <td><strong>${formatUsd(receivableBalance(r))}</strong></td>
-                          <td><span class="status-pill ${r.status === 'paid' ? 'delivered' : r.status === 'partial' ? 'prepared' : 'pending'}">${statusLabels[r.status] || r.status}</span></td>
+                          <td><span class="status-pill ${overdue ? 'annulled' : r.status === 'paid' ? 'delivered' : r.status === 'partial' ? 'prepared' : 'pending'}">${overdue ? 'Vencida' : statusLabels[r.status] || r.status}</span></td>
                           <td>${r.status === 'paid' ? '' : `<button class="primary-button compact" data-abono="${r.id}">Abonar</button>`}</td>
-                        </tr>`
-                    )
+                        </tr>`;
+                    })
                     .join('')
-                : '<tr><td colspan="8" class="muted-cell">Sin cuentas por cobrar. Las ventas a credito apareceran aqui.</td></tr>'
+                : '<tr><td colspan="9" class="muted-cell">Sin cuentas por cobrar. Las ventas a credito apareceran aqui.</td></tr>'
             }
           </tbody>
         </table>
@@ -2308,6 +2346,7 @@ function renderAccounts() {
         <div class="account-totals">
           <strong>Total USD ${formatUsd(totals.USD || 0)}</strong>
           <strong>Total Bs ${formatVes(totals.VES || 0)}</strong>
+          <button class="receivable-chip" data-view="receivables" title="Ver cuentas por cobrar">Por cobrar ${formatUsd(receivablesSummary(state.receivables).balanceUsd)} →</button>
         </div>
       </div>
       <div class="account-grid">
@@ -2828,6 +2867,10 @@ function bindEvents() {
       render();
     });
   });
+  document.querySelector('[data-credit-due]')?.addEventListener('change', (event) => {
+    creditDueDate = event.target.value;
+    render();
+  });
   document.querySelectorAll('[data-mixed-fill]').forEach((button) => {
     button.addEventListener('click', () => {
       const id = button.dataset.mixedFill;
@@ -2858,6 +2901,12 @@ function bindEvents() {
   document.querySelector('[data-action="finalize"]')?.addEventListener('click', finalizeCurrentOrder);
   document.querySelector('[data-action="download-quote"]')?.addEventListener('click', downloadQuote);
   document.querySelector('[data-action="reset-storage"]')?.addEventListener('click', () => {
+    const ok = window.confirm(
+      'Esto borra los datos guardados en ESTE equipo y recarga la pagina.\n\n' +
+        'Si la sincronizacion esta activa, el sistema se restaurara desde la nube ' +
+        '(tendras que iniciar sesion de nuevo).\n\n¿Continuar?'
+    );
+    if (!ok) return;
     localStorage.clear();
     location.reload();
   });
@@ -3089,7 +3138,10 @@ function finalizeCurrentOrder() {
     if (isCredit) {
       // Venta a credito: no entra dinero todavia, se crea la cuenta por cobrar.
       const customer = state.customers.find((c) => c.id === currentOrder.customerId);
-      state.receivables = [createReceivable({ order: paid, customer }), ...state.receivables];
+      state.receivables = [
+        createReceivable({ order: paid, customer, dueDate: creditDueDate || null }),
+        ...state.receivables
+      ];
     } else if (isMixed) {
       // Pago mixto: un movimiento de caja por cada parcial, a su cuenta destino.
       const movements = (paid.payment.splits || []).map((s) => {
@@ -3131,6 +3183,7 @@ function finalizeCurrentOrder() {
     customerQuery = '';
     paymentMode = 'contado';
     mixedAmounts = {};
+    creditDueDate = defaultCreditDue();
   });
 }
 

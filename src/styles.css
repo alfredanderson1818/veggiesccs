@@ -777,6 +777,64 @@ textarea:focus {
   color: var(--coral, #d84b5d);
 }
 
+/* ---- Cuentas por cobrar: vencimientos ---- */
+.credit-due {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.credit-due input {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  background: white;
+  color: var(--ink);
+}
+.metric-card.alert {
+  border-color: rgba(216, 75, 93, 0.45);
+}
+.metric-card.alert strong {
+  color: #c23246;
+}
+.due-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.due-badge.today {
+  background: #fdf3d7;
+  color: #8a6d1a;
+}
+.due-badge.overdue {
+  background: #fdeaed;
+  color: #c23246;
+}
+.row-overdue td {
+  background: rgba(216, 75, 93, 0.045);
+}
+.receivable-chip {
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.receivable-chip:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
 .totals-box {
   display: grid;
   gap: 10px;

@@ -5,7 +5,8 @@ import {
   receivableBalance,
   paidAmount,
   addAbono,
-  receivablesSummary
+  receivablesSummary,
+  isOverdue
 } from './receivables.mjs';
 
 const order = {
@@ -49,4 +50,31 @@ test('summary aggregates totals, paid and balance', () => {
   assert.equal(summary.paidUsd, 30);
   assert.equal(summary.balanceUsd, 120);
   assert.equal(summary.openCount, 2);
+});
+
+test('due date: stores it, flags overdue only while unpaid', () => {
+  const r = createReceivable({ order, customer, dueDate: '2026-07-10' });
+  assert.equal(r.dueDate, '2026-07-10');
+  assert.equal(isOverdue(r, '2026-07-09'), false); // aun no vence
+  assert.equal(isOverdue(r, '2026-07-10'), false); // vence hoy, no esta vencida
+  assert.equal(isOverdue(r, '2026-07-11'), true); // ya paso
+
+  const { receivable: paid } = addAbono(r, { amountUsd: 100, methodName: 'Zelle' });
+  assert.equal(isOverdue(paid, '2026-07-20'), false); // pagada nunca esta vencida
+
+  const sinFecha = createReceivable({ order, customer });
+  assert.equal(sinFecha.dueDate, null);
+  assert.equal(isOverdue(sinFecha, '2030-01-01'), false);
+});
+
+test('summary reports overdue balance and count', () => {
+  const a = createReceivable({ order, customer, dueDate: '2026-07-01' }); // vencida, debe 100
+  let b = createReceivable({ order: { ...order, orderNumber: 601 }, customer, dueDate: '2026-07-01' });
+  ({ receivable: b } = addAbono(b, { amountUsd: 60, methodName: 'Zelle' })); // vencida, debe 40
+  const c = createReceivable({ order: { ...order, orderNumber: 602 }, customer, dueDate: '2026-12-31' }); // vigente
+
+  const s = receivablesSummary([a, b, c], '2026-07-12');
+  assert.equal(s.overdueCount, 2);
+  assert.equal(s.overdueUsd, 140);
+  assert.equal(s.balanceUsd, 240);
 });
