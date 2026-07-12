@@ -835,6 +835,103 @@ textarea:focus {
   color: var(--brand);
 }
 
+/* ---- Grupos de deudas (cobrar por cliente / pagar por proveedor) ---- */
+.group-block {
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  overflow: hidden;
+}
+.group-block.has-overdue {
+  border-color: rgba(216, 75, 93, 0.4);
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--panel-soft);
+  border-bottom: 1px solid var(--line);
+}
+.group-head > strong {
+  font-size: 15px;
+}
+.group-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.group-block .table-wrap {
+  margin: 0;
+}
+.group-block table {
+  margin: 0;
+}
+
+/* ---- Modal: fila de 2 campos ---- */
+.modal-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ---- Configuracion ---- */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 14px;
+}
+.settings-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.settings-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.settings-card label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.settings-card input,
+.settings-card select {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  background: white;
+  color: var(--ink);
+}
+.settings-info {
+  display: grid;
+  gap: 8px;
+}
+.settings-info > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  padding: 8px 10px;
+  background: var(--panel-soft);
+  border-radius: 8px;
+}
+.settings-info span {
+  color: var(--muted);
+}
+
 .totals-box {
   display: grid;
   gap: 10px;

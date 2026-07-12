@@ -45,6 +45,14 @@ import {
 import { DOCUMENT_TYPES, createDocument, nextDocumentNumber } from './domain/documents.mjs';
 import { annulOrder } from './domain/returns.mjs';
 import { createReceivable, addAbono, receivableBalance, paidAmount, receivablesSummary, isOverdue } from './domain/receivables.mjs';
+import {
+  createPayable,
+  addPago,
+  payableBalance,
+  paidAmount as payablePaidAmount,
+  payablesSummary,
+  isOverdue as isPayableOverdue
+} from './domain/payables.mjs';
 import { createReturnMovements } from './domain/inventory.mjs';
 import { createAdjustmentMovement } from './domain/accounts.mjs';
 import {
@@ -80,16 +88,17 @@ let search = '';
 let selectedPaymentMethod = state.paymentMethods[0].id;
 let inventoryForm = { mode: 'purchase', productId: '', quantity: '', unitCostUsd: '', note: '' };
 let bcvStatus = '';
-let importState = { rawText: '', rows: [], status: '', marginPct: 30, busy: false };
+let importState = { rawText: '', rows: [], status: '', marginPct: Number(state.settings.importMarginPct ?? 30), busy: false };
 let customerSearch = '';
 let accountModal = null;
 let customerQuery = '';
 let paymentMode = 'contado'; // 'contado' | 'mixto' | 'credito'
 let mixedAmounts = {}; // { [methodId]: montoUsdString } para pago mixto
-// Vencimiento del credito: por defecto a 7 dias.
+// Vencimiento del credito: por defecto a N dias (configurable en Configuracion).
 function defaultCreditDue() {
+  const days = Math.max(0, Number(state.settings.creditDays ?? 7));
   const d = new Date();
-  d.setDate(d.getDate() + 7);
+  d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
 let creditDueDate = defaultCreditDue();
@@ -264,7 +273,11 @@ const FOCUS_ATTRS = [
   'data-supplier-cost',
   'data-customer-pick',
   'data-mixed-amount',
-  'data-credit-due'
+  'data-credit-due',
+  'data-item-price',
+  'data-item-cost',
+  'data-set-field',
+  'data-edit-field'
 ];
 
 function captureFocus() {
@@ -311,7 +324,8 @@ const SECTIONS = [
   { key: 'ventas', label: 'Ventas', ic: '🛒', views: [['pos', 'Punto de venta'], ['weborders', 'Pedidos web'], ['import', 'Importar factura'], ['galpon', 'Galpon'], ['documents', 'Documentos']] },
   { key: 'catalogo', label: 'Catalogo', ic: '🥬', views: [['catalog', 'Productos'], ['inventory', 'Inventario']] },
   { key: 'clientes', label: 'Clientes', ic: '👥', views: [['customers', 'Cartera']] },
-  { key: 'finanzas', label: 'Finanzas', ic: '💵', views: [['accounts', 'Cuentas y caja'], ['receivables', 'Cuentas por cobrar'], ['reports', 'Reportes'], ['rates', 'Tasa BCV']] }
+  { key: 'finanzas', label: 'Finanzas', ic: '💵', views: [['accounts', 'Cuentas y caja'], ['receivables', 'Cuentas por cobrar'], ['payables', 'Cuentas por pagar'], ['reports', 'Reportes'], ['rates', 'Tasa BCV']] },
+  { key: 'config', label: 'Configuracion', ic: '⚙️', views: [['settings', 'Configuracion']] }
 ];
 const HIDDEN_VIEW_SECTION = { checkout: 'ventas' };
 
@@ -389,7 +403,10 @@ function render() {
         ${activeView === 'documents' ? renderDocuments() : ''}
         ${activeView === 'customers' ? renderCustomers() : ''}
         ${activeView === 'receivables' ? renderReceivables() : ''}
+        ${activeView === 'payables' ? renderPayables() : ''}
         ${activeView === 'accounts' ? renderAccounts() : ''}
+        ${activeView === 'settings' ? renderSettings() : ''}
+        ${renderEditModal()}
       </main>
     </div>
   `;
@@ -645,13 +662,7 @@ function renderOrderPanel(totals) {
       <label class="notes-label">Observaciones
         <textarea rows="2" data-field="notes" placeholder="Nota para factura, despacho o proveedor...">${currentOrder.notes}</textarea>
       </label>
-      <div class="totals-box">
-        <div><span>Subtotal</span><strong>${formatUsd(totals.subtotalUsd)} <small>${formatVes(chargedBs(totals.subtotalUsd))}</small></strong></div>
-        <div><span>IVA</span><strong>${formatUsd(totals.ivaUsd)}</strong></div>
-        <div><span>IGTF</span><strong>${formatUsd(totals.igtfUsd)}</strong></div>
-        <div><span>Margen estimado</span><strong>${formatUsd(totals.estimatedMarginUsd)}</strong></div>
-        <div class="grand-total"><span>Total</span><strong>${formatUsd(totals.totalUsd)} <small>${formatVes(chargedBs(totals.totalUsd))}</small></strong></div>
-      </div>
+      ${renderTotalsBox(totals)}
       ${renderPayModeTabs()}
       ${renderPaymentBody(totals)}
       <button class="finish-button" data-action="finalize" ${canFinalize ? '' : 'disabled'}>
@@ -680,13 +691,13 @@ function renderCheckout(totals) {
           <div class="table-wrap">
             <table class="checkout-table">
               <thead><tr>
-                <th>Producto</th><th>Modo</th><th>Cantidad</th><th>Precio U.</th><th>Total</th><th></th>
+                <th>Producto</th><th>Modo</th><th>Cantidad</th><th>Costo U.</th><th>Precio U.</th><th>Total</th><th></th>
               </tr></thead>
               <tbody>
                 ${
                   currentOrder.items.length
                     ? currentOrder.items.map(renderCheckoutRow).join('')
-                    : '<tr><td colspan="6" class="muted-cell">Sin productos. Agregalos desde el catalogo o Importar.</td></tr>'
+                    : '<tr><td colspan="7" class="muted-cell">Sin productos. Agregalos desde el catalogo o Importar.</td></tr>'
                 }
               </tbody>
             </table>
@@ -702,13 +713,7 @@ function renderCheckout(totals) {
           <label class="notes-label">Observaciones
             <textarea rows="2" data-field="notes" placeholder="Nota para factura, despacho o proveedor...">${currentOrder.notes}</textarea>
           </label>
-          <div class="totals-box">
-            <div><span>Subtotal</span><strong>${formatUsd(totals.subtotalUsd)} <small>${formatVes(chargedBs(totals.subtotalUsd))}</small></strong></div>
-            <div><span>IVA</span><strong>${formatUsd(totals.ivaUsd)}</strong></div>
-            <div><span>IGTF</span><strong>${formatUsd(totals.igtfUsd)}</strong></div>
-            <div><span>Margen estimado</span><strong>${formatUsd(totals.estimatedMarginUsd)}</strong></div>
-            <div class="grand-total"><span>Total</span><strong>${formatUsd(totals.totalUsd)} <small>${formatVes(chargedBs(totals.totalUsd))}</small></strong></div>
-          </div>
+          ${renderTotalsBox(totals)}
           ${renderPayModeTabs()}
           ${renderPaymentBody(totals)}
           <button class="finish-button" data-action="finalize" ${canFinalize ? '' : 'disabled'}>
@@ -721,14 +726,60 @@ function renderCheckout(totals) {
   `;
 }
 
+// Caja de totales compartida (panel POS y checkout). Los data-sum permiten
+// refrescar los montos en sitio mientras se escribe, sin re-render (no se
+// pierde el foco ni el punto decimal a mitad de tecleo).
+function renderTotalsBox(totals) {
+  return `
+    <div class="totals-box">
+      <div><span>Subtotal</span><strong data-sum="subtotal">${formatUsd(totals.subtotalUsd)} <small>${formatVes(chargedBs(totals.subtotalUsd))}</small></strong></div>
+      <div><span>IVA</span><strong data-sum="iva">${formatUsd(totals.ivaUsd)}</strong></div>
+      <div><span>IGTF</span><strong data-sum="igtf">${formatUsd(totals.igtfUsd)}</strong></div>
+      <div><span>Margen estimado</span><strong data-sum="margin">${formatUsd(totals.estimatedMarginUsd)}</strong></div>
+      <div class="grand-total"><span>Total</span><strong data-sum="total">${formatUsd(totals.totalUsd)} <small>${formatVes(chargedBs(totals.totalUsd))}</small></strong></div>
+    </div>
+  `;
+}
+
+// Refresca totales y montos de linea en el DOM sin re-render (edicion fluida).
+function updateOrderTotalsInPlace() {
+  const totals = calculateOrderTotals(currentOrder);
+  document.querySelectorAll('[data-line-total]').forEach((el) => {
+    const item = currentOrder.items.find((i) => i.id === el.dataset.lineTotal);
+    if (item) el.textContent = formatUsd(item.quantity * item.priceUsd);
+  });
+  const sums = {
+    subtotal: `${formatUsd(totals.subtotalUsd)} <small>${formatVes(chargedBs(totals.subtotalUsd))}</small>`,
+    iva: formatUsd(totals.ivaUsd),
+    igtf: formatUsd(totals.igtfUsd),
+    margin: formatUsd(totals.estimatedMarginUsd),
+    total: `${formatUsd(totals.totalUsd)} <small>${formatVes(chargedBs(totals.totalUsd))}</small>`
+  };
+  document.querySelectorAll('[data-sum]').forEach((el) => {
+    if (sums[el.dataset.sum] !== undefined) el.innerHTML = sums[el.dataset.sum];
+  });
+  document.querySelectorAll('[data-action="finalize"]').forEach((btn) => {
+    btn.innerHTML = finalizeLabel(totals);
+  });
+}
+
+// Actualiza un campo del item en memoria SIN filtrar ceros (edicion en curso).
+function patchOrderItem(itemId, patch) {
+  currentOrder = {
+    ...currentOrder,
+    items: currentOrder.items.map((i) => (i.id === itemId ? { ...i, ...patch } : i))
+  };
+}
+
 function renderCheckoutRow(item) {
   return `
     <tr>
       <td><strong>${item.name}</strong></td>
       <td><small>${controlModeLabel(item.controlMode)}${item.supplierName ? ` · ${item.supplierName}` : ''}</small></td>
-      <td><div class="qty-cell"><input class="cell-input" type="number" min="0" step="0.1" value="${item.quantity}" data-item-qty="${item.id}" /><span>${item.unit || ''}</span></div></td>
-      <td>${formatUsd(item.priceUsd)}</td>
-      <td class="num"><strong>${formatUsd(item.quantity * item.priceUsd)}</strong></td>
+      <td><div class="qty-cell"><input class="cell-input" type="number" min="0" step="0.01" value="${item.quantity}" data-item-qty="${item.id}" /><span>${item.unit || ''}</span></div></td>
+      <td><div class="qty-cell"><span>$</span><input class="cell-input" type="number" min="0" step="0.01" value="${item.estimatedCostUsd}" data-item-cost="${item.id}" title="Costo del producto (se guarda en el catalogo)" /></div></td>
+      <td><div class="qty-cell"><span>$</span><input class="cell-input" type="number" min="0" step="0.01" value="${item.priceUsd}" data-item-price="${item.id}" /></div></td>
+      <td class="num"><strong data-line-total="${item.id}">${formatUsd(item.quantity * item.priceUsd)}</strong></td>
       <td><button class="row-remove" data-remove-item="${item.id}">x</button></td>
     </tr>
   `;
@@ -742,8 +793,8 @@ function renderCartItem(item) {
         <strong>${item.name}</strong>
         <small>${controlModeLabel(item.controlMode)} · ${item.supplierName || 'Propio'}</small>
       </div>
-      <input type="number" min="0" step="0.1" value="${item.quantity}" data-item-qty="${item.id}" />
-      <b>${formatUsd(item.quantity * item.priceUsd)}</b>
+      <input type="number" min="0" step="0.01" value="${item.quantity}" data-item-qty="${item.id}" />
+      <b data-line-total="${item.id}">${formatUsd(item.quantity * item.priceUsd)}</b>
     </article>
   `;
 }
@@ -857,32 +908,122 @@ function paymentSummaryText(payment) {
   return payment.methodName || '';
 }
 
+function renderSettings() {
+  const s = state.settings;
+  const lastSync = getSyncedAt();
+  return `
+    <section class="customers-panel settings-panel">
+      <div class="section-heading">
+        <h2>Configuracion</h2>
+        <p>Los cambios se guardan automaticamente al salir de cada campo.</p>
+      </div>
+
+      <div class="settings-grid">
+        <div class="settings-card">
+          <h3>Datos del negocio</h3>
+          <p class="muted-cell">Aparecen en facturas, recibos y cotizaciones.</p>
+          <label>Nombre del negocio
+            <input type="text" data-set-field="companyName" value="${s.companyName || ''}" />
+          </label>
+          <label>RIF
+            <input type="text" data-set-field="businessRif" value="${s.businessRif || ''}" placeholder="J-12345678-9" />
+          </label>
+          <label>Telefono
+            <input type="text" data-set-field="businessPhone" value="${s.businessPhone || ''}" placeholder="0424..." />
+          </label>
+          <label>Direccion
+            <input type="text" data-set-field="businessAddress" value="${s.businessAddress || ''}" placeholder="Caracas · Venezuela" />
+          </label>
+        </div>
+
+        <div class="settings-card">
+          <h3>Preferencias de venta</h3>
+          <label>Usuario (registrado como)
+            <input type="text" data-set-field="userName" value="${s.userName || ''}" />
+          </label>
+          <label>Canal por defecto
+            <select data-set-field="channel">
+              <option value="Mayor" ${s.channel === 'Mayor' ? 'selected' : ''}>Mayor</option>
+              <option value="Principal" ${s.channel === 'Principal' ? 'selected' : ''}>Detal (Principal)</option>
+            </select>
+          </label>
+          <label>Dias de credito por defecto
+            <input type="number" min="0" step="1" data-set-field="creditDays" value="${s.creditDays ?? 7}" />
+          </label>
+          <label>Margen de importacion por defecto (%)
+            <input type="number" min="0" step="1" data-set-field="importMarginPct" value="${s.importMarginPct ?? 30}" />
+          </label>
+        </div>
+
+        <div class="settings-card">
+          <h3>Redondeo de bolivares</h3>
+          <p class="muted-cell">Como se redondea el total en Bs al cobrar. Paso 0 = sin redondeo.</p>
+          <label>Paso de redondeo (Bs)
+            <input type="number" min="0" step="1" data-set-field="bsStep" value="${s.bsRounding?.step ?? 0}" />
+          </label>
+          <label>Modo
+            <select data-set-field="bsMode">
+              <option value="nearest" ${(s.bsRounding?.mode || 'nearest') === 'nearest' ? 'selected' : ''}>Al mas cercano</option>
+              <option value="up" ${s.bsRounding?.mode === 'up' ? 'selected' : ''}>Siempre arriba</option>
+              <option value="down" ${s.bsRounding?.mode === 'down' ? 'selected' : ''}>Siempre abajo</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="settings-card">
+          <h3>Sistema</h3>
+          <div class="settings-info">
+            <div><span>Sincronizacion</span><strong>${lastSync ? `Ultima: ${new Date(lastSync).toLocaleString('es-VE')}` : 'Aun sin sincronizar'}</strong></div>
+            <div><span>Productos</span><strong>${state.products.length}</strong></div>
+            <div><span>Clientes</span><strong>${state.customers.length}</strong></div>
+            <div><span>Ventas registradas</span><strong>${state.orders.length}</strong></div>
+          </div>
+          <p class="muted-cell">La tasa BCV y su historial se manejan en Finanzas → Tasa BCV.</p>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderCatalog() {
+  const q = search.trim().toLowerCase();
+  const rows = [...state.products]
+    .filter((p) => !q || `${p.name} ${p.sku} ${p.category || ''}`.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
   return `
     <section class="catalog-panel">
       <div class="section-heading">
         <h2>Catalogo flexible</h2>
-        <p>El modo define si afecta inventario, crea orden al galpon o se vende como servicio.</p>
+        <button class="primary-button compact" data-action="new-product">+ Nuevo producto</button>
+      </div>
+      <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">El modo define si afecta inventario, crea orden al galpon o se vende como servicio. Haz clic en Editar para cambiar precios, costo, stock o codigo.</p>
+      <div class="search-row">
+        <input type="search" placeholder="Buscar producto, codigo o categoria..." value="${search}" data-field="search" />
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Codigo</th><th>Producto</th><th>Modo</th><th>Precio</th><th>Costo est.</th><th>Stock</th></tr></thead>
+          <thead><tr><th>Codigo</th><th>Producto</th><th>Modo</th><th>Detal</th><th>Mayor</th><th>Costo</th><th>Stock</th><th></th></tr></thead>
           <tbody>
-            ${[...state.products]
-              .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
-              .map(
-                (product) => `
+            ${
+              rows.length
+                ? rows
+                    .map(
+                      (product) => `
                   <tr>
                     <td>${product.sku}</td>
-                    <td>${product.name}</td>
+                    <td><strong>${product.name}</strong>${product.supplierName ? `<br/><small class="muted-cell">${product.supplierName}</small>` : ''}</td>
                     <td><span class="mode-pill">${controlModeLabel(product.controlMode)}</span></td>
-                    <td>${formatUsd(product.priceUsd)}</td>
+                    <td>${formatUsd(product.prices?.Principal ?? product.priceUsd)}</td>
+                    <td>${formatUsd(product.prices?.Mayor ?? product.priceUsd)}</td>
                     <td>${formatUsd(product.estimatedCostUsd)}</td>
                     <td>${product.stock ?? 'No aplica'} ${product.stock === null ? '' : product.unit}</td>
+                    <td><button class="ghost-button compact" data-edit-product="${product.id}">Editar</button></td>
                   </tr>
                 `
-              )
-              .join('')}
+                    )
+                    .join('')
+                : '<tr><td colspan="8" class="muted-cell">Sin productos que coincidan</td></tr>'
+            }
           </tbody>
         </table>
       </div>
@@ -1393,7 +1534,7 @@ function documentHtml(doc) {
       </div>
     </div>
     <div class="parties">
-      <div><strong>Emisor</strong>${state.settings.companyName}<br/>Caracas · Venezuela</div>
+      <div><strong>Emisor</strong>${state.settings.companyName}${state.settings.businessRif ? `<br/>RIF: ${state.settings.businessRif}` : ''}${state.settings.businessPhone ? `<br/>Telf: ${state.settings.businessPhone}` : ''}<br/>${state.settings.businessAddress || 'Caracas · Venezuela'}</div>
       <div style="text-align:right"><strong>Cliente</strong>${doc.customerName}</div>
     </div>
     <table>
@@ -1435,8 +1576,9 @@ function thermalPrint(orderId) {
       .total { display: flex; justify-content: space-between; font-size: 14px; font-weight: bold; }
       .muted { color: #333; font-size: 11px; }
     </style></head><body>
-    <div class="center brand">Veggies CCS</div>
-    <div class="center muted">Caracas · Venezuela</div>
+    <div class="center brand">${state.settings.companyName || 'Veggies CCS'}</div>
+    ${state.settings.businessRif ? `<div class="center muted">RIF: ${state.settings.businessRif}</div>` : ''}
+    <div class="center muted">${state.settings.businessAddress || 'Caracas · Venezuela'}${state.settings.businessPhone ? ` · ${state.settings.businessPhone}` : ''}</div>
     <div class="line"></div>
     <div class="muted">Pedido #${order.orderNumber} · ${order.date}</div>
     <div class="muted">Cliente: ${(order.customerName || '').trim() || 'Mostrador'}</div>
@@ -1840,8 +1982,9 @@ function renderCustomers() {
     <section class="customers-panel">
       <div class="section-heading">
         <h2>Clientes</h2>
-        <p>Cartera de clientes con historial de compras.</p>
+        <button class="primary-button compact" data-action="new-customer">+ Nuevo cliente</button>
       </div>
+      <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">Cartera de clientes con historial de compras. Haz clic en Editar para actualizar datos.</p>
       <div class="dashboard-grid">
         ${metricCard('Clientes', all.length, `${active} activos`, 'solid')}
         ${metricCard('Total gastado', formatUsd(totalSpent), 'Historico', '')}
@@ -1855,7 +1998,7 @@ function renderCustomers() {
         <table>
           <thead><tr>
             <th>Cliente</th><th>Cedula/RIF</th><th>Telefono</th><th>Producto top</th>
-            <th>Ordenes</th><th>Total gastado</th><th>Ticket prom.</th><th>Estatus</th>
+            <th>Ordenes</th><th>Total gastado</th><th>Ticket prom.</th><th>Estatus</th><th></th>
           </tr></thead>
           <tbody>
             ${
@@ -1873,10 +2016,11 @@ function renderCustomers() {
                           <td>${formatUsd(c.totalSpent)}</td>
                           <td>${formatUsd(c.avgTicket)}</td>
                           <td><span class="status-pill ${(c.status || '').toLowerCase() === 'activo' ? 'delivered' : 'annulled'}">${c.status}</span></td>
+                          <td><button class="ghost-button compact" data-edit-customer="${c.id}">Editar</button></td>
                         </tr>`
                     )
                     .join('')
-                : '<tr><td colspan="8" class="muted-cell">Sin clientes que coincidan</td></tr>'
+                : '<tr><td colspan="9" class="muted-cell">Sin clientes que coincidan</td></tr>'
             }
           </tbody>
         </table>
@@ -1994,38 +2138,103 @@ async function loadWebOrderToSystem(id) {
   render();
 }
 
+// ---- Helpers compartidos de cobrar/pagar ----
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+function dueCellFor(item, overdueFn, today) {
+  if (!item.dueDate) return '<span class="muted-cell">Sin fecha</span>';
+  if (item.status === 'paid') return item.dueDate;
+  const diff = Math.round((new Date(item.dueDate) - new Date(today)) / 86400000);
+  if (diff < 0) return `<span class="due-badge overdue">${item.dueDate} · hace ${Math.abs(diff)}d</span>`;
+  if (diff === 0) return `<span class="due-badge today">${item.dueDate} · hoy</span>`;
+  return `<span class="due-badge">${item.dueDate} · en ${diff}d</span>`;
+}
+// Agrupa por deudor/acreedor y ordena: grupos con vencidas primero, luego por
+// saldo; los totalmente saldados al final. Dentro: orden de cobranza.
+function groupDebts(list, { nameOf, balanceOf, overdueFn, today }) {
+  const map = new Map();
+  list.forEach((item) => {
+    const key = nameOf(item);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(item);
+  });
+  const groups = Array.from(map.entries()).map(([name, items]) => {
+    const sorted = [...items].sort((a, b) => {
+      const rank = (r) => (r.status === 'paid' ? 2 : overdueFn(r, today) ? 0 : 1);
+      if (rank(a) !== rank(b)) return rank(a) - rank(b);
+      const da = a.dueDate || '9999-12-31';
+      const db = b.dueDate || '9999-12-31';
+      if (da !== db) return da < db ? -1 : 1;
+      return (b.date || '').localeCompare(a.date || '');
+    });
+    return {
+      name,
+      items: sorted,
+      balance: roundMoney(items.reduce((s, r) => s + balanceOf(r), 0)),
+      openCount: items.filter((r) => r.status !== 'paid').length,
+      hasOverdue: items.some((r) => overdueFn(r, today))
+    };
+  });
+  return groups.sort((a, b) => {
+    const rank = (g) => (g.balance <= 0 ? 2 : g.hasOverdue ? 0 : 1);
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
+    return b.balance - a.balance;
+  });
+}
+
 function renderReceivables() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const summary = receivablesSummary(state.receivables, today);
   const statusLabels = { open: 'Pendiente', partial: 'Abonado', paid: 'Pagado' };
-  const daysFromToday = (dateStr) =>
-    Math.round((new Date(dateStr) - new Date(today)) / 86400000);
-
-  // Orden de cobranza: vencidas primero (la mas vieja arriba), luego por vencer,
-  // luego sin fecha; las pagadas al final.
-  const list = [...state.receivables].sort((a, b) => {
-    const rank = (r) => (r.status === 'paid' ? 2 : isOverdue(r, today) ? 0 : 1);
-    if (rank(a) !== rank(b)) return rank(a) - rank(b);
-    const da = a.dueDate || '9999-12-31';
-    const db = b.dueDate || '9999-12-31';
-    if (da !== db) return da < db ? -1 : 1;
-    return (b.date || '').localeCompare(a.date || '');
+  const groups = groupDebts(state.receivables, {
+    nameOf: (r) => r.customerName || 'Cliente',
+    balanceOf: receivableBalance,
+    overdueFn: isOverdue,
+    today
   });
 
-  const dueCell = (r) => {
-    if (!r.dueDate) return '<span class="muted-cell">Sin fecha</span>';
-    if (r.status === 'paid') return r.dueDate;
-    const diff = daysFromToday(r.dueDate);
-    if (diff < 0) return `<span class="due-badge overdue">${r.dueDate} · hace ${Math.abs(diff)}d</span>`;
-    if (diff === 0) return `<span class="due-badge today">${r.dueDate} · hoy</span>`;
-    return `<span class="due-badge">${r.dueDate} · en ${diff}d</span>`;
-  };
+  const groupHtml = (g) => `
+    <div class="group-block ${g.hasOverdue ? 'has-overdue' : ''}">
+      <div class="group-head">
+        <strong>${g.name}</strong>
+        <div class="group-meta">
+          ${g.hasOverdue ? '<span class="due-badge overdue">Vencido</span>' : ''}
+          <span>${g.openCount ? `${g.openCount} pendiente${g.openCount === 1 ? '' : 's'}` : 'Al dia'}</span>
+          <strong class="${g.balance > 0 ? 'neg-cell' : 'pos-cell'}">Debe ${formatUsd(g.balance)}</strong>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Pedido</th><th>Fecha</th><th>Vence</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            ${g.items
+              .map((r) => {
+                const overdue = isOverdue(r, today);
+                return `
+                  <tr class="${overdue ? 'row-overdue' : ''}">
+                    <td>#${r.orderNumber}</td>
+                    <td>${r.date}</td>
+                    <td>${dueCellFor(r, isOverdue, today)}</td>
+                    <td>${formatUsd(r.totalUsd)}</td>
+                    <td>${formatUsd(paidAmount(r))}</td>
+                    <td><strong>${formatUsd(receivableBalance(r))}</strong></td>
+                    <td><span class="status-pill ${overdue ? 'annulled' : r.status === 'paid' ? 'delivered' : r.status === 'partial' ? 'prepared' : 'pending'}">${overdue ? 'Vencida' : statusLabels[r.status] || r.status}</span></td>
+                    <td>${r.status === 'paid' ? '' : `<button class="primary-button compact" data-abono="${r.id}">Abonar</button>`}</td>
+                  </tr>`;
+              })
+              .join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 
   return `
     <section class="customers-panel">
       <div class="section-heading">
         <h2>Cuentas por cobrar</h2>
-        <p>Ventas a credito. Registra abonos hasta saldar la deuda del cliente.</p>
+        <p>Agrupadas por cliente. Registra abonos hasta saldar cada deuda.</p>
       </div>
       <div class="dashboard-grid">
         ${metricCard('Por cobrar', formatUsd(summary.balanceUsd), `${summary.openCount} creditos abiertos`, 'solid')}
@@ -2033,36 +2242,81 @@ function renderReceivables() {
         ${metricCard('Cobrado', formatUsd(summary.paidUsd), 'Abonos recibidos', '')}
         ${metricCard('Total a credito', formatUsd(summary.totalUsd), `${summary.totalCount} ventas`, '')}
       </div>
+      ${
+        groups.length
+          ? groups.map(groupHtml).join('')
+          : '<div class="empty-cart">Sin cuentas por cobrar. Las ventas a credito apareceran aqui.</div>'
+      }
+    </section>
+    ${renderAccountModal()}
+  `;
+}
+
+function renderPayables() {
+  const today = todayIso();
+  const summary = payablesSummary(state.payables, today);
+  const statusLabels = { open: 'Pendiente', partial: 'Abonado', paid: 'Pagada' };
+  const groups = groupDebts(state.payables, {
+    nameOf: (p) => p.supplierName || 'Proveedor',
+    balanceOf: payableBalance,
+    overdueFn: isPayableOverdue,
+    today
+  });
+
+  const groupHtml = (g) => `
+    <div class="group-block ${g.hasOverdue ? 'has-overdue' : ''}">
+      <div class="group-head">
+        <strong>${g.name}</strong>
+        <div class="group-meta">
+          ${g.hasOverdue ? '<span class="due-badge overdue">Vencido</span>' : ''}
+          <span>${g.openCount ? `${g.openCount} pendiente${g.openCount === 1 ? '' : 's'}` : 'Al dia'}</span>
+          <strong class="${g.balance > 0 ? 'neg-cell' : 'pos-cell'}">Debes ${formatUsd(g.balance)}</strong>
+        </div>
+      </div>
       <div class="table-wrap">
         <table>
-          <thead><tr>
-            <th>Cliente</th><th>Pedido</th><th>Fecha</th><th>Vence</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th></th>
-          </tr></thead>
+          <thead><tr><th>Concepto</th><th>Fecha</th><th>Vence</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
           <tbody>
-            ${
-              list.length
-                ? list
-                    .map((r) => {
-                      const overdue = isOverdue(r, today);
-                      return `
-                        <tr class="${overdue ? 'row-overdue' : ''}">
-                          <td><strong>${r.customerName}</strong></td>
-                          <td>#${r.orderNumber}</td>
-                          <td>${r.date}</td>
-                          <td>${dueCell(r)}</td>
-                          <td>${formatUsd(r.totalUsd)}</td>
-                          <td>${formatUsd(paidAmount(r))}</td>
-                          <td><strong>${formatUsd(receivableBalance(r))}</strong></td>
-                          <td><span class="status-pill ${overdue ? 'annulled' : r.status === 'paid' ? 'delivered' : r.status === 'partial' ? 'prepared' : 'pending'}">${overdue ? 'Vencida' : statusLabels[r.status] || r.status}</span></td>
-                          <td>${r.status === 'paid' ? '' : `<button class="primary-button compact" data-abono="${r.id}">Abonar</button>`}</td>
-                        </tr>`;
-                    })
-                    .join('')
-                : '<tr><td colspan="9" class="muted-cell">Sin cuentas por cobrar. Las ventas a credito apareceran aqui.</td></tr>'
-            }
+            ${g.items
+              .map((p) => {
+                const overdue = isPayableOverdue(p, today);
+                return `
+                  <tr class="${overdue ? 'row-overdue' : ''}">
+                    <td>${p.concept || 'Compra'}${p.note ? `<br/><small class="muted-cell">${p.note}</small>` : ''}</td>
+                    <td>${p.date}</td>
+                    <td>${dueCellFor(p, isPayableOverdue, today)}</td>
+                    <td>${formatUsd(p.totalUsd)}</td>
+                    <td>${formatUsd(payablePaidAmount(p))}</td>
+                    <td><strong>${formatUsd(payableBalance(p))}</strong></td>
+                    <td><span class="status-pill ${overdue ? 'annulled' : p.status === 'paid' ? 'delivered' : p.status === 'partial' ? 'prepared' : 'pending'}">${overdue ? 'Vencida' : statusLabels[p.status] || p.status}</span></td>
+                    <td>${p.status === 'paid' ? '' : `<button class="primary-button compact" data-pagar="${p.id}">Pagar</button>`}</td>
+                  </tr>`;
+              })
+              .join('')}
           </tbody>
         </table>
       </div>
+    </div>
+  `;
+
+  return `
+    <section class="customers-panel">
+      <div class="section-heading">
+        <h2>Cuentas por pagar</h2>
+        <button class="primary-button compact" data-action="new-payable">+ Nueva cuenta por pagar</button>
+      </div>
+      <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">Lo que le debes a tus proveedores, agrupado. Tambien puedes generarlas desde una orden del Galpon.</p>
+      <div class="dashboard-grid">
+        ${metricCard('Por pagar', formatUsd(summary.balanceUsd), `${summary.openCount} deudas abiertas`, 'solid')}
+        ${metricCard('Vencido', formatUsd(summary.overdueUsd), `${summary.overdueCount} deudas vencidas`, summary.overdueCount ? 'alert' : '')}
+        ${metricCard('Pagado', formatUsd(summary.paidUsd), 'Pagos realizados', '')}
+        ${metricCard('Total registrado', formatUsd(summary.totalUsd), `${summary.totalCount} cuentas`, '')}
+      </div>
+      ${
+        groups.length
+          ? groups.map(groupHtml).join('')
+          : '<div class="empty-cart">Sin cuentas por pagar. Crea una con el boton o desde una orden del Galpon.</div>'
+      }
     </section>
     ${renderAccountModal()}
   `;
@@ -2300,6 +2554,13 @@ function renderSupplierOrder(order) {
         <div><span>Margen real</span><strong>${formatUsd(margin.realMarginUsd)}</strong></div>
       </div>
       <div class="supplier-actions">
+        ${
+          order.payableId
+            ? '<span class="done-label">Cuenta por pagar creada ✓</span>'
+            : order.status === 'cancelled'
+              ? ''
+              : `<button class="ghost-button compact" data-make-payable="${order.id}">Registrar cuenta por pagar</button>`
+        }
         ${nextStatusButton(order)}
       </div>
     </article>
@@ -2576,6 +2837,22 @@ function renderAccountModal() {
         <input type="text" data-modal-field="note" value="${m.note || ''}" placeholder="Abono / referencia..." />
       </label>
     `;
+  } else if (m.type === 'pago-payable') {
+    const payable = state.payables.find((p) => p.id === m.payableId);
+    const balance = payable ? payableBalance(payable) : 0;
+    title = `Pagar a ${payable?.supplierName || ''}`;
+    body = `
+      <div class="modal-preview">Debes: <strong>${formatUsd(balance)}</strong>${payable?.concept ? ` · ${payable.concept}` : ''}</div>
+      <label>Monto del pago (USD)
+        <input type="number" step="0.01" data-modal-field="amount" value="${m.amount ?? balance}" />
+      </label>
+      <label>Sale de la cuenta
+        <select data-modal-select="accountId">${accountOptions(m.accountId)}</select>
+      </label>
+      <label>Nota
+        <input type="text" data-modal-field="note" value="${m.note || ''}" placeholder="Pago / referencia..." />
+      </label>
+    `;
   }
 
   return `
@@ -2612,6 +2889,233 @@ function openAccountModal(type) {
 function closeAccountModal() {
   accountModal = null;
   render();
+}
+
+// ==== Modal generico de formulario (clientes, productos, cuentas por pagar) ====
+// Los inputs actualizan editModal.values en memoria sin re-render (tecleo fluido);
+// el render ocurre al guardar o cerrar.
+let editModal = null; // { kind, id: null|string, values: {...} }
+
+function fieldRow(label, key, value, opts = {}) {
+  if (opts.options) {
+    return `<label>${label}
+      <select data-edit-field="${key}">
+        ${opts.options.map(([v, l]) => `<option value="${v}" ${String(value) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+    </label>`;
+  }
+  return `<label>${label}
+    <input type="${opts.type || 'text'}" ${opts.step ? `step="${opts.step}"` : ''} data-edit-field="${key}" value="${value ?? ''}" placeholder="${opts.placeholder || ''}" />
+  </label>`;
+}
+
+function renderEditModal() {
+  if (!editModal) return '';
+  const v = editModal.values;
+  let title = '';
+  let body = '';
+  if (editModal.kind === 'customer') {
+    title = editModal.id ? `Editar cliente` : 'Nuevo cliente';
+    body = `
+      ${fieldRow('Nombre', 'name', v.name, { placeholder: 'Nombre del cliente o negocio' })}
+      ${fieldRow('Cedula / RIF', 'idDoc', v.idDoc, { placeholder: 'V-12.345.678 / J-...' })}
+      ${fieldRow('Telefono', 'phone', v.phone, { placeholder: '0412...' })}
+      ${fieldRow('Direccion', 'address', v.address, { placeholder: 'Zona / direccion de entrega' })}
+      ${fieldRow('Estatus', 'status', v.status, { options: [['Activo', 'Activo'], ['Inactivo', 'Inactivo']] })}
+    `;
+  } else if (editModal.kind === 'product') {
+    title = editModal.id ? `Editar producto` : 'Nuevo producto';
+    body = `
+      ${fieldRow('Nombre', 'name', v.name, { placeholder: 'Nombre del producto' })}
+      <div class="modal-grid-2">
+        ${fieldRow('Codigo (SKU)', 'sku', v.sku, { placeholder: 'VC000' })}
+        ${fieldRow('Unidad', 'unit', v.unit, { options: [['Kg', 'Kg'], ['Und', 'Und'], ['Caja', 'Caja'], ['Bulto', 'Bulto'], ['Servicio', 'Servicio']] })}
+      </div>
+      ${fieldRow('Modo de control', 'controlMode', v.controlMode, {
+        options: [
+          ['on_demand', 'Bajo pedido (galpon)'],
+          ['inventory', 'Inventario (descuenta stock)'],
+          ['no_inventory', 'Sin inventario'],
+          ['service', 'Servicio']
+        ]
+      })}
+      <div class="modal-grid-2">
+        ${fieldRow('Costo (USD)', 'estimatedCostUsd', v.estimatedCostUsd, { type: 'number', step: '0.01' })}
+        ${fieldRow('Stock', 'stock', v.stock, { type: 'number', step: '0.01' })}
+      </div>
+      <div class="modal-grid-2">
+        ${fieldRow('Precio detal (USD)', 'pricePrincipal', v.pricePrincipal, { type: 'number', step: '0.01' })}
+        ${fieldRow('Precio mayor (USD)', 'priceMayor', v.priceMayor, { type: 'number', step: '0.01' })}
+      </div>
+      ${fieldRow('Proveedor', 'supplierName', v.supplierName, { placeholder: 'Galpon Principal' })}
+    `;
+  } else if (editModal.kind === 'payable') {
+    title = editModal.id ? 'Editar cuenta por pagar' : 'Nueva cuenta por pagar';
+    body = `
+      ${fieldRow('Proveedor', 'supplierName', v.supplierName, { placeholder: 'Nombre del proveedor' })}
+      ${fieldRow('Concepto', 'concept', v.concept, { placeholder: 'Factura / compra / flete...' })}
+      <div class="modal-grid-2">
+        ${fieldRow('Monto (USD)', 'totalUsd', v.totalUsd, { type: 'number', step: '0.01' })}
+        ${fieldRow('Fecha limite', 'dueDate', v.dueDate, { type: 'date' })}
+      </div>
+      ${fieldRow('Nota', 'note', v.note, { placeholder: 'Opcional' })}
+    `;
+  }
+  return `
+    <div class="modal-overlay" data-action="close-edit-modal">
+      <div class="modal" data-modal-stop>
+        <div class="modal-head"><h3>${title}</h3><button class="modal-close" data-action="close-edit-modal">x</button></div>
+        <form class="modal-form" data-action="submit-edit-modal">
+          ${body}
+          <div class="modal-actions">
+            <button type="button" class="ghost-button compact" data-action="close-edit-modal">Cancelar</button>
+            <button type="submit" class="primary-button compact">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function submitEditModal() {
+  if (!editModal) return;
+  const v = editModal.values;
+  const num = (x) => roundMoney(Math.max(0, Number(x || 0)));
+  if (editModal.kind === 'customer') {
+    if (!String(v.name || '').trim()) return window.alert('El nombre es obligatorio.');
+    if (editModal.id) {
+      setState(() => {
+        state.customers = state.customers.map((c) =>
+          c.id === editModal.id
+            ? { ...c, name: v.name.trim(), idDoc: v.idDoc || '', phone: v.phone || '', address: v.address || '', status: v.status || 'Activo' }
+            : c
+        );
+      });
+    } else {
+      setState(() => {
+        state.customers = [
+          {
+            id: `c-${crypto.randomUUID().slice(0, 8)}`,
+            number: String(state.customers.length + 1),
+            status: v.status || 'Activo',
+            name: v.name.trim(),
+            idDoc: v.idDoc || '',
+            phone: v.phone || '',
+            email: '',
+            address: v.address || '',
+            topProduct: '',
+            totalOrders: 0,
+            totalSpent: 0,
+            avgTicket: 0
+          },
+          ...state.customers
+        ];
+      });
+    }
+  } else if (editModal.kind === 'product') {
+    if (!String(v.name || '').trim()) return window.alert('El nombre es obligatorio.');
+    const prices = { Principal: num(v.pricePrincipal), Mayor: num(v.priceMayor) || num(v.pricePrincipal) };
+    if (editModal.id) {
+      setState(() => {
+        state.products = state.products.map((p) => {
+          if (p.id !== editModal.id) return p;
+          const newStock = v.stock === '' || v.stock === null ? p.stock : num(v.stock);
+          // Si es inventariable y cambio el stock, deja rastro en el kardex.
+          if (p.controlMode === 'inventory' && Number(newStock) !== Number(p.stock || 0)) {
+            const adjustment = createInventoryAdjustment({
+              product: p,
+              quantity: roundMoney(Number(newStock) - Number(p.stock || 0)),
+              note: 'Ajuste manual desde catalogo'
+            });
+            state.inventoryMovements = [adjustment, ...state.inventoryMovements];
+          }
+          return {
+            ...p,
+            name: v.name.trim(),
+            sku: (v.sku || '').trim() || p.sku,
+            unit: v.unit || p.unit,
+            controlMode: v.controlMode || p.controlMode,
+            estimatedCostUsd: num(v.estimatedCostUsd),
+            stock: newStock,
+            prices,
+            priceUsd: prices.Principal,
+            supplierName: (v.supplierName || '').trim()
+          };
+        });
+      });
+    } else {
+      setState(() => {
+        state.products = [
+          ...state.products,
+          {
+            id: `p-${crypto.randomUUID().slice(0, 8)}`,
+            sku: (v.sku || '').trim() || `VC${String(state.products.length + 1).padStart(3, '0')}`,
+            name: v.name.trim(),
+            unit: v.unit || 'Kg',
+            category: 'General',
+            priceUsd: prices.Principal,
+            prices,
+            estimatedCostUsd: num(v.estimatedCostUsd),
+            controlMode: v.controlMode || 'on_demand',
+            stock: v.stock === '' || v.stock === null ? 0 : num(v.stock),
+            supplierId: 'sup-galpon',
+            supplierName: (v.supplierName || '').trim() || 'Galpon Principal'
+          }
+        ];
+      });
+    }
+  } else if (editModal.kind === 'payable') {
+    if (!String(v.supplierName || '').trim()) return window.alert('El proveedor es obligatorio.');
+    if (!num(v.totalUsd)) return window.alert('El monto debe ser mayor a 0.');
+    if (editModal.id) {
+      setState(() => {
+        state.payables = state.payables.map((p) =>
+          p.id === editModal.id
+            ? { ...p, supplierName: v.supplierName.trim(), concept: v.concept || '', totalUsd: num(v.totalUsd), dueDate: v.dueDate || null, note: v.note || '' }
+            : p
+        );
+      });
+    } else {
+      setState(() => {
+        state.payables = [
+          createPayable({
+            supplierName: v.supplierName.trim(),
+            concept: v.concept || '',
+            totalUsd: num(v.totalUsd),
+            dueDate: v.dueDate || null,
+            note: v.note || ''
+          }),
+          ...state.payables
+        ];
+      });
+    }
+  }
+  editModal = null;
+}
+
+function bindEditModal() {
+  if (!editModal) return;
+  document.querySelectorAll('[data-edit-field]').forEach((input) => {
+    input.addEventListener('input', () => {
+      editModal.values[input.dataset.editField] = input.value;
+    });
+    input.addEventListener('change', () => {
+      editModal.values[input.dataset.editField] = input.value;
+    });
+  });
+  document.querySelectorAll('[data-action="close-edit-modal"]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if (e.target !== el) return;
+      editModal = null;
+      render();
+    });
+  });
+  document.querySelector('[data-action="submit-edit-modal"]')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitEditModal();
+    render();
+  });
+  document.querySelector('.modal [data-modal-stop]')?.addEventListener('click', (e) => e.stopPropagation());
 }
 
 function readModalFields() {
@@ -2703,6 +3207,31 @@ function submitAccountModal() {
       state.accountMovements = [movement, ...state.accountMovements];
       state.accounts = applyMovements(state.accounts, [movement]);
     });
+  } else if (m.type === 'pago-payable') {
+    const payable = state.payables.find((p) => p.id === m.payableId);
+    const account = state.accounts.find((a) => a.id === m.accountId);
+    const amount = Number(m.amount);
+    if (!payable || !account || !amount || amount <= 0) {
+      window.alert('Selecciona la cuenta y un monto valido.');
+      return;
+    }
+    // Sale dinero de la cuenta elegida (en su moneda).
+    const movementAmount =
+      account.currency === 'VES'
+        ? applyBsRounding(amount * state.settings.exchangeRate.value, state.settings.bsRounding)
+        : roundMoney(amount);
+    setState(() => {
+      const { payable: updated } = addPago(payable, { amountUsd: amount, methodName: account.name, note: m.note });
+      state.payables = state.payables.map((p) => (p.id === payable.id ? updated : p));
+      const movement = createAdjustmentMovement({
+        accountId: account.id,
+        amount: -movementAmount,
+        currency: account.currency === 'VES' ? 'VES' : 'USD',
+        note: `Pago a proveedor · ${payable.supplierName}${payable.concept ? ` · ${payable.concept}` : ''}`
+      });
+      state.accountMovements = [movement, ...state.accountMovements];
+      state.accounts = applyMovements(state.accounts, [movement]);
+    });
   }
   accountModal = null;
   render();
@@ -2725,6 +3254,39 @@ function bindAccountModal() {
   document.querySelectorAll('[data-abono]').forEach((button) => {
     button.addEventListener('click', () => {
       accountModal = { type: 'abono', receivableId: button.dataset.abono, accountId: state.accounts[0].id, amount: '', note: '' };
+      render();
+    });
+  });
+  document.querySelectorAll('[data-pagar]').forEach((button) => {
+    button.addEventListener('click', () => {
+      accountModal = { type: 'pago-payable', payableId: button.dataset.pagar, accountId: state.accounts[0].id, amount: '', note: '' };
+      render();
+    });
+  });
+  document.querySelectorAll('[data-make-payable]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const so = state.supplierOrders.find((o) => o.id === button.dataset.makePayable);
+      if (!so || so.payableId) return;
+      const margin = calculateSupplierOrderMargin(so);
+      const total = roundMoney(margin.actualCostUsd || margin.estimatedCostUsd || 0);
+      if (!total) {
+        window.alert('La orden no tiene costo todavia. Carga el costo real primero.');
+        return;
+      }
+      setState(() => {
+        const payable = createPayable({
+          supplierName: so.supplierName,
+          concept: `Orden galpon · pedido #${so.saleOrderNumber}`,
+          totalUsd: total,
+          dueDate: defaultCreditDue(),
+          sourceOrderId: so.id
+        });
+        state.payables = [payable, ...state.payables];
+        state.supplierOrders = state.supplierOrders.map((o) =>
+          o.id === so.id ? { ...o, payableId: payable.id } : o
+        );
+      });
+      activeView = 'payables';
       render();
     });
   });
@@ -2763,6 +3325,75 @@ function bindAccountModal() {
 
 function bindEvents() {
   bindAccountModal();
+  bindEditModal();
+
+  // CRUD: clientes, productos y cuentas por pagar
+  document.querySelector('[data-action="new-customer"]')?.addEventListener('click', () => {
+    editModal = { kind: 'customer', id: null, values: { name: '', idDoc: '', phone: '', address: '', status: 'Activo' } };
+    render();
+  });
+  document.querySelectorAll('[data-edit-customer]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const c = state.customers.find((x) => x.id === btn.dataset.editCustomer);
+      if (!c) return;
+      editModal = { kind: 'customer', id: c.id, values: { name: c.name, idDoc: c.idDoc || '', phone: c.phone || '', address: c.address || '', status: c.status || 'Activo' } };
+      render();
+    });
+  });
+  document.querySelector('[data-action="new-product"]')?.addEventListener('click', () => {
+    editModal = {
+      kind: 'product',
+      id: null,
+      values: { name: '', sku: '', unit: 'Kg', controlMode: 'on_demand', estimatedCostUsd: '', stock: '', pricePrincipal: '', priceMayor: '', supplierName: 'Galpon Principal' }
+    };
+    render();
+  });
+  document.querySelectorAll('[data-edit-product]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const p = state.products.find((x) => x.id === btn.dataset.editProduct);
+      if (!p) return;
+      editModal = {
+        kind: 'product',
+        id: p.id,
+        values: {
+          name: p.name,
+          sku: p.sku || '',
+          unit: p.unit || 'Kg',
+          controlMode: p.controlMode || 'on_demand',
+          estimatedCostUsd: p.estimatedCostUsd ?? '',
+          stock: p.stock ?? '',
+          pricePrincipal: p.prices?.Principal ?? p.priceUsd ?? '',
+          priceMayor: p.prices?.Mayor ?? p.priceUsd ?? '',
+          supplierName: p.supplierName || ''
+        }
+      };
+      render();
+    });
+  });
+  document.querySelector('[data-action="new-payable"]')?.addEventListener('click', () => {
+    editModal = { kind: 'payable', id: null, values: { supplierName: '', concept: '', totalUsd: '', dueDate: defaultCreditDue(), note: '' } };
+    render();
+  });
+
+  // Configuracion: auto-guardado al salir de cada campo.
+  document.querySelectorAll('[data-set-field]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const key = input.dataset.setField;
+      const value = input.value;
+      setState(() => {
+        if (key === 'bsStep') {
+          state.settings.bsRounding = { ...(state.settings.bsRounding || { mode: 'nearest' }), step: Math.max(0, Number(value || 0)) };
+        } else if (key === 'bsMode') {
+          state.settings.bsRounding = { ...(state.settings.bsRounding || { step: 0 }), mode: value };
+        } else if (key === 'creditDays' || key === 'importMarginPct') {
+          state.settings[key] = Math.max(0, Number(value || 0));
+          if (key === 'importMarginPct') importState.marginPct = state.settings[key];
+        } else {
+          state.settings[key] = value;
+        }
+      });
+    });
+  });
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', () => {
       activeView = button.dataset.view;
@@ -2804,10 +3435,49 @@ function bindEvents() {
     });
   });
 
+  // Cantidad / costo / precio de linea: edicion FLUIDA.
+  // 'input' actualiza memoria y totales en sitio (sin re-render: no se pierde el
+  // foco ni el decimal a mitad de tecleo, y un 0 transitorio no borra la fila).
+  // 'change' (Enter/salir del campo) hace el commit con re-render y persistencia.
   document.querySelectorAll('[data-item-qty]').forEach((input) => {
     input.addEventListener('input', () => {
+      patchOrderItem(input.dataset.itemQty, { quantity: Math.max(0, Number(input.value || 0)) });
+      updateOrderTotalsInPlace();
+    });
+    input.addEventListener('change', () => {
       currentOrder = updateOrderItemQuantity(currentOrder, input.dataset.itemQty, input.value);
       render();
+    });
+  });
+  document.querySelectorAll('[data-item-price]').forEach((input) => {
+    input.addEventListener('input', () => {
+      patchOrderItem(input.dataset.itemPrice, { priceUsd: Math.max(0, Number(input.value || 0)) });
+      updateOrderTotalsInPlace();
+    });
+    input.addEventListener('change', () => {
+      patchOrderItem(input.dataset.itemPrice, { priceUsd: roundMoney(Math.max(0, Number(input.value || 0))) });
+      render();
+    });
+  });
+  document.querySelectorAll('[data-item-cost]').forEach((input) => {
+    input.addEventListener('input', () => {
+      patchOrderItem(input.dataset.itemCost, { estimatedCostUsd: Math.max(0, Number(input.value || 0)) });
+      updateOrderTotalsInPlace();
+    });
+    input.addEventListener('change', () => {
+      const cost = roundMoney(Math.max(0, Number(input.value || 0)));
+      const item = currentOrder.items.find((i) => i.id === input.dataset.itemCost);
+      patchOrderItem(input.dataset.itemCost, { estimatedCostUsd: cost });
+      // El ultimo costo se guarda en el catalogo para las proximas ventas.
+      if (item?.productId) {
+        setState(() => {
+          state.products = state.products.map((p) =>
+            p.id === item.productId ? { ...p, estimatedCostUsd: cost } : p
+          );
+        });
+      } else {
+        render();
+      }
     });
   });
 
