@@ -2434,24 +2434,67 @@ function option2(value, label, selected) {
   return `<option value="${value}" ${value === selected ? 'selected' : ''}>${label}</option>`;
 }
 
+// Aplica una tasa como TASA DE COBRO en todo el sistema: settings (la usan
+// abonos, pagos, transferencias y equivalentes) + el pedido en curso + auditoria.
+function applyChargedRate(value, source, reason) {
+  const prev = state.settings.exchangeRate.value;
+  const today = new Date().toISOString().slice(0, 10);
+  setState(() => {
+    if (rateChanged(prev, value)) {
+      state.rateAudit = [
+        createRateAuditEntry({ fromValue: prev, toValue: roundMoney(value), source, reason }),
+        ...state.rateAudit
+      ];
+    }
+    state.rateHistory = recordRate(state.rateHistory, { value: roundMoney(value), source, date: today });
+    state.settings.exchangeRate = { value: roundMoney(value), source, date: today };
+    currentOrder = { ...currentOrder, exchangeRate: state.settings.exchangeRate };
+  });
+}
+
+async function getBcvRate() {
+  const res = await fetch('https://ve.dolarapi.com/v1/dolares/oficial', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  const value = Number(data.promedio);
+  if (!value) throw new Error('Respuesta sin tasa');
+  return roundMoney(value);
+}
+
 async function fetchBcvRate() {
   bcvStatus = 'Consultando tasa BCV...';
   render();
   try {
-    const res = await fetch('https://ve.dolarapi.com/v1/dolares/oficial', { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const value = Number(data.promedio);
-    if (!value) throw new Error('Respuesta sin tasa');
-    const today = new Date().toISOString().slice(0, 10);
-    setState(() => {
-      state.rateHistory = recordRate(state.rateHistory, { value, source: 'BCV', date: today });
-    });
-    bcvStatus = `BCV actualizado: ${value} Bs/$ (${today}). Aplica la tasa manual si deseas cobrar con ella.`;
+    const value = await getBcvRate();
+    // El boton aplica la tasa BCV como tasa de cobro en TODO el sistema.
+    applyChargedRate(value, 'BCV', 'Actualizacion BCV desde el modulo de tasa');
+    bcvStatus = `BCV ${value} Bs/$ aplicado como tasa de cobro en todo el sistema.`;
     render();
   } catch (error) {
     bcvStatus = `No se pudo consultar el BCV (${error.message}). Ingresa la tasa manualmente.`;
     render();
+  }
+}
+
+// Al abrir la app: refresca el BCV solo. Respeta una tasa manual fijada HOY
+// (override del dia); si la tasa vigente es de otro dia o vino del BCV, se
+// actualiza automaticamente para no cobrar con una tasa vieja.
+async function autoRefreshBcv() {
+  try {
+    const value = await getBcvRate();
+    const charged = state.settings.exchangeRate;
+    const today = new Date().toISOString().slice(0, 10);
+    const manualToday = charged.source === 'manual' && charged.date === today;
+    if (!manualToday && rateChanged(charged.value, value)) {
+      applyChargedRate(value, 'BCV', 'Actualizacion automatica BCV al abrir');
+    } else {
+      // Solo registra la referencia BCV del dia en el historial.
+      setState(() => {
+        state.rateHistory = recordRate(state.rateHistory, { value, source: 'BCV', date: today });
+      });
+    }
+  } catch {
+    /* sin internet: se sigue con la tasa guardada */
   }
 }
 
@@ -2473,18 +2516,7 @@ function applyManualRate() {
     return;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  setState(() => {
-    if (rateChanged(prev, value)) {
-      state.rateAudit = [
-        createRateAuditEntry({ fromValue: prev, toValue: value, source: 'manual', reason }),
-        ...state.rateAudit
-      ];
-    }
-    state.rateHistory = recordRate(state.rateHistory, { value, source: 'manual', date: today });
-    state.settings.exchangeRate = { value: roundMoney(value), source: 'manual', date: today };
-    currentOrder = { ...currentOrder, exchangeRate: state.settings.exchangeRate };
-  });
+  applyChargedRate(value, 'manual', reason);
   bcvStatus = `Tasa aplicada: ${roundMoney(value)} Bs/$`;
   render();
 }
@@ -2821,36 +2853,36 @@ function renderAccountModal() {
         <select data-modal-select="accountId">${accountOptions(m.accountId)}</select>
       </label>
     `;
-  } else if (m.type === 'abono') {
-    const receivable = state.receivables.find((r) => r.id === m.receivableId);
-    const balance = receivable ? receivableBalance(receivable) : 0;
-    title = `Abonar a ${receivable?.customerName || ''}`;
+  } else if (m.type === 'abono' || m.type === 'pago-payable') {
+    // Multipago: el monto se reparte entre una o varias cuentas.
+    const isAbono = m.type === 'abono';
+    const target = isAbono
+      ? state.receivables.find((r) => r.id === m.receivableId)
+      : state.payables.find((p) => p.id === m.payableId);
+    const balance = target ? (isAbono ? receivableBalance(target) : payableBalance(target)) : 0;
+    const rate = state.settings.exchangeRate.value;
+    title = isAbono ? `Abonar a ${target?.customerName || ''}` : `Pagar a ${target?.supplierName || ''}`;
     body = `
-      <div class="modal-preview">Saldo pendiente: <strong>${formatUsd(balance)}</strong></div>
-      <label>Monto del abono (USD)
-        <input type="number" step="0.01" data-modal-field="amount" value="${m.amount ?? balance}" />
-      </label>
-      <label>Entra a la cuenta
-        <select data-modal-select="accountId">${accountOptions(m.accountId)}</select>
-      </label>
+      <div class="modal-preview">${isAbono ? 'Saldo pendiente' : 'Debes'}: <strong>${formatUsd(balance)}</strong>${!isAbono && target?.concept ? ` · ${target.concept}` : ''}</div>
+      <p class="split-hint">Reparte el monto entre las cuentas donde ${isAbono ? 'entra' : 'sale'} el dinero (una o varias). Tasa: ${rate} Bs/$.</p>
+      <div class="modal-splits">
+        ${state.accounts
+          .map(
+            (a) => `
+          <div class="mixed-row">
+            <div class="mixed-meta"><strong>${a.name}</strong><small ${a.currency === 'VES' ? `data-split-ves="${a.id}"` : ''}>${a.currency === 'VES' ? `VES · ${formatVes(applyBsRounding((Number((m.splits || {})[a.id]) || 0) * rate, state.settings.bsRounding))}` : 'USD'}</small></div>
+            <div class="mixed-input">
+              <span>$</span>
+              <input type="number" min="0" step="0.01" placeholder="0.00" value="${(m.splits || {})[a.id] ?? ''}" data-modal-split="${a.id}" />
+              <button type="button" class="mixed-fill" data-modal-fill="${a.id}" title="Asignar lo que falta">resto</button>
+            </div>
+          </div>`
+          )
+          .join('')}
+      </div>
+      <div class="mixed-status" data-split-status></div>
       <label>Nota
-        <input type="text" data-modal-field="note" value="${m.note || ''}" placeholder="Abono / referencia..." />
-      </label>
-    `;
-  } else if (m.type === 'pago-payable') {
-    const payable = state.payables.find((p) => p.id === m.payableId);
-    const balance = payable ? payableBalance(payable) : 0;
-    title = `Pagar a ${payable?.supplierName || ''}`;
-    body = `
-      <div class="modal-preview">Debes: <strong>${formatUsd(balance)}</strong>${payable?.concept ? ` · ${payable.concept}` : ''}</div>
-      <label>Monto del pago (USD)
-        <input type="number" step="0.01" data-modal-field="amount" value="${m.amount ?? balance}" />
-      </label>
-      <label>Sale de la cuenta
-        <select data-modal-select="accountId">${accountOptions(m.accountId)}</select>
-      </label>
-      <label>Nota
-        <input type="text" data-modal-field="note" value="${m.note || ''}" placeholder="Pago / referencia..." />
+        <input type="text" data-modal-field="note" value="${m.note || ''}" placeholder="${isAbono ? 'Abono / referencia...' : 'Pago / referencia...'}" />
       </label>
     `;
   }
@@ -3186,51 +3218,61 @@ function submitAccountModal() {
     setState(() => {
       state.paymentMethods = [...state.paymentMethods, method];
     });
-  } else if (m.type === 'abono') {
-    const receivable = state.receivables.find((r) => r.id === m.receivableId);
-    const account = state.accounts.find((a) => a.id === m.accountId);
-    const amount = Number(m.amount);
-    if (!receivable || !account || !amount || amount <= 0) {
-      window.alert('Selecciona la cuenta y un monto valido.');
+  } else if (m.type === 'abono' || m.type === 'pago-payable') {
+    // Multipago: un movimiento por cada cuenta con monto > 0.
+    const isAbono = m.type === 'abono';
+    const target = isAbono
+      ? state.receivables.find((r) => r.id === m.receivableId)
+      : state.payables.find((p) => p.id === m.payableId);
+    if (!target) return;
+    const balance = isAbono ? receivableBalance(target) : payableBalance(target);
+    const splits = state.accounts
+      .map((account) => ({
+        account,
+        amountUsd: roundMoney(Math.max(0, Number((m.splits || {})[account.id] || 0)))
+      }))
+      .filter((s) => s.amountUsd > 0);
+    const totalUsd = roundMoney(splits.reduce((sum, s) => sum + s.amountUsd, 0));
+    if (!totalUsd) {
+      window.alert('Escribe el monto en al menos una cuenta.');
       return;
     }
-    const movementAmount = account.currency === 'VES' ? applyBsRounding(amount * state.settings.exchangeRate.value, state.settings.bsRounding) : roundMoney(amount);
-    setState(() => {
-      const { receivable: updated } = addAbono(receivable, { amountUsd: amount, methodName: account.name, note: m.note });
-      state.receivables = state.receivables.map((r) => (r.id === receivable.id ? updated : r));
-      const movement = createAdjustmentMovement({
-        accountId: account.id,
-        amount: movementAmount,
-        currency: account.currency === 'VES' ? 'VES' : 'USD',
-        note: `Abono credito #${receivable.orderNumber} · ${receivable.customerName}`
-      });
-      state.accountMovements = [movement, ...state.accountMovements];
-      state.accounts = applyMovements(state.accounts, [movement]);
-    });
-  } else if (m.type === 'pago-payable') {
-    const payable = state.payables.find((p) => p.id === m.payableId);
-    const account = state.accounts.find((a) => a.id === m.accountId);
-    const amount = Number(m.amount);
-    if (!payable || !account || !amount || amount <= 0) {
-      window.alert('Selecciona la cuenta y un monto valido.');
+    if (totalUsd > balance + 0.01) {
+      window.alert(`El total (${formatUsd(totalUsd)}) supera el saldo pendiente (${formatUsd(balance)}).`);
       return;
     }
-    // Sale dinero de la cuenta elegida (en su moneda).
-    const movementAmount =
-      account.currency === 'VES'
-        ? applyBsRounding(amount * state.settings.exchangeRate.value, state.settings.bsRounding)
-        : roundMoney(amount);
+    const rate = state.settings.exchangeRate.value;
     setState(() => {
-      const { payable: updated } = addPago(payable, { amountUsd: amount, methodName: account.name, note: m.note });
-      state.payables = state.payables.map((p) => (p.id === payable.id ? updated : p));
-      const movement = createAdjustmentMovement({
-        accountId: account.id,
-        amount: -movementAmount,
-        currency: account.currency === 'VES' ? 'VES' : 'USD',
-        note: `Pago a proveedor · ${payable.supplierName}${payable.concept ? ` · ${payable.concept}` : ''}`
+      let updated = target;
+      const movements = [];
+      splits.forEach((s) => {
+        if (isAbono) {
+          ({ receivable: updated } = addAbono(updated, { amountUsd: s.amountUsd, methodName: s.account.name, note: m.note }));
+        } else {
+          ({ payable: updated } = addPago(updated, { amountUsd: s.amountUsd, methodName: s.account.name, note: m.note }));
+        }
+        const movementAmount =
+          s.account.currency === 'VES'
+            ? applyBsRounding(s.amountUsd * rate, state.settings.bsRounding)
+            : s.amountUsd;
+        movements.push(
+          createAdjustmentMovement({
+            accountId: s.account.id,
+            amount: isAbono ? movementAmount : -movementAmount,
+            currency: s.account.currency === 'VES' ? 'VES' : 'USD',
+            note: isAbono
+              ? `Abono credito #${target.orderNumber} · ${target.customerName}${splits.length > 1 ? ' (multipago)' : ''}`
+              : `Pago a proveedor · ${target.supplierName}${target.concept ? ` · ${target.concept}` : ''}${splits.length > 1 ? ' (multipago)' : ''}`
+          })
+        );
       });
-      state.accountMovements = [movement, ...state.accountMovements];
-      state.accounts = applyMovements(state.accounts, [movement]);
+      if (isAbono) {
+        state.receivables = state.receivables.map((r) => (r.id === target.id ? updated : r));
+      } else {
+        state.payables = state.payables.map((p) => (p.id === target.id ? updated : p));
+      }
+      state.accountMovements = [...movements, ...state.accountMovements];
+      state.accounts = applyMovements(state.accounts, movements);
     });
   }
   accountModal = null;
@@ -3253,14 +3295,78 @@ function bindAccountModal() {
   });
   document.querySelectorAll('[data-abono]').forEach((button) => {
     button.addEventListener('click', () => {
-      accountModal = { type: 'abono', receivableId: button.dataset.abono, accountId: state.accounts[0].id, amount: '', note: '' };
+      accountModal = { type: 'abono', receivableId: button.dataset.abono, splits: {}, note: '' };
       render();
     });
   });
   document.querySelectorAll('[data-pagar]').forEach((button) => {
     button.addEventListener('click', () => {
-      accountModal = { type: 'pago-payable', payableId: button.dataset.pagar, accountId: state.accounts[0].id, amount: '', note: '' };
+      accountModal = { type: 'pago-payable', payableId: button.dataset.pagar, splits: {}, note: '' };
       render();
+    });
+  });
+
+  // Reparto multipago dentro del modal (abono/pago): estado en vivo sin re-render.
+  const splitBalance = () => {
+    const m = accountModal;
+    if (!m) return 0;
+    if (m.type === 'abono') {
+      const r = state.receivables.find((x) => x.id === m.receivableId);
+      return r ? receivableBalance(r) : 0;
+    }
+    const p = state.payables.find((x) => x.id === m.payableId);
+    return p ? payableBalance(p) : 0;
+  };
+  const splitTotal = () => {
+    const m = accountModal;
+    if (!m) return 0;
+    return roundMoney(
+      state.accounts.reduce((sum, a) => sum + Math.max(0, Number((m.splits || {})[a.id] || 0)), 0)
+    );
+  };
+  const updateSplitStatus = () => {
+    const el = document.querySelector('[data-split-status]');
+    if (!el) return;
+    // Equivalente en Bs por fila (cuentas VES) a la tasa vigente.
+    document.querySelectorAll('[data-split-ves]').forEach((small) => {
+      const usd = Math.max(0, Number((accountModal?.splits || {})[small.dataset.splitVes] || 0));
+      small.textContent = `VES · ${formatVes(applyBsRounding(usd * state.settings.exchangeRate.value, state.settings.bsRounding))}`;
+    });
+    const balance = splitBalance();
+    const total = splitTotal();
+    const remaining = roundMoney(balance - total);
+    el.classList.remove('ok', 'over');
+    if (total > 0 && Math.abs(remaining) < 0.01) el.classList.add('ok');
+    if (remaining < -0.01) el.classList.add('over');
+    el.innerHTML = `<span>Asignado ${formatUsd(total)} / ${formatUsd(balance)}</span><strong>${
+      remaining < -0.01
+        ? `Te pasaste por ${formatUsd(Math.abs(remaining))}`
+        : Math.abs(remaining) < 0.01 && total > 0
+          ? 'Cubre todo el saldo ✓'
+          : `Queda ${formatUsd(remaining)} pendiente`
+    }</strong>`;
+  };
+  updateSplitStatus();
+  document.querySelectorAll('[data-modal-split]').forEach((input) => {
+    input.addEventListener('input', () => {
+      if (!accountModal) return;
+      accountModal.splits = { ...(accountModal.splits || {}), [input.dataset.modalSplit]: input.value };
+      updateSplitStatus();
+    });
+  });
+  document.querySelectorAll('[data-modal-fill]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!accountModal) return;
+      const id = button.dataset.modalFill;
+      const others = state.accounts.reduce(
+        (sum, a) => (a.id === id ? sum : sum + Math.max(0, Number((accountModal.splits || {})[a.id] || 0))),
+        0
+      );
+      const fill = roundMoney(Math.max(0, splitBalance() - others));
+      accountModal.splits = { ...(accountModal.splits || {}), [id]: fill ? String(fill) : '' };
+      const input = document.querySelector(`[data-modal-split="${id}"]`);
+      if (input) input.value = fill ? String(fill) : '';
+      updateSplitStatus();
     });
   });
   document.querySelectorAll('[data-make-payable]').forEach((button) => {
@@ -3888,5 +3994,7 @@ function downloadQuote() {
 }
 
 render();
-// Arranca la sincronizacion en la nube despues del primer render (no bloquea el arranque).
-initCloudSync();
+// Arranca la sincronizacion en la nube despues del primer render (no bloquea el
+// arranque) y, al terminar, refresca la tasa BCV del dia (respeta una tasa
+// manual fijada hoy). El orden evita que el estado adoptado pise la tasa fresca.
+initCloudSync().finally(() => autoRefreshBcv());

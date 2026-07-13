@@ -893,6 +893,20 @@ textarea:focus {
   color: var(--brand);
 }
 
+/* ---- Reparto multipago dentro del modal (abono / pago a proveedor) ---- */
+.modal-splits {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.split-hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 /* ---- Grupos de deudas (cobrar por cliente / pagar por proveedor) ---- */
 .group-block {
   margin-bottom: 14px;
