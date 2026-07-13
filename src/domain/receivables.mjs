@@ -33,12 +33,13 @@ export function receivableBalance(receivable) {
   return roundMoney(receivable.totalUsd - paidAmount(receivable));
 }
 
-export function addAbono(receivable, { amountUsd, methodName, note }) {
+export function addAbono(receivable, { amountUsd, methodName, note, accountId }) {
   const amount = roundMoney(Math.max(0, Number(amountUsd || 0)));
   const payment = {
     id: crypto.randomUUID(),
     amountUsd: amount,
     methodName: methodName || '',
+    accountId: accountId || null,
     note: note || '',
     createdAt: new Date().toISOString()
   };

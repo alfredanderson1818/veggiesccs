@@ -28,12 +28,13 @@ export function payableBalance(payable) {
   return roundMoney(payable.totalUsd - paidAmount(payable));
 }
 
-export function addPago(payable, { amountUsd, methodName, note }) {
+export function addPago(payable, { amountUsd, methodName, note, accountId }) {
   const amount = roundMoney(Math.max(0, Number(amountUsd || 0)));
   const payment = {
     id: crypto.randomUUID(),
     amountUsd: amount,
     methodName: methodName || '',
+    accountId: accountId || null,
     note: note || '',
     createdAt: new Date().toISOString()
   };

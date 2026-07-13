@@ -893,6 +893,40 @@ textarea:focus {
   color: var(--brand);
 }
 
+/* ---- Chip de estado de la nube (sidebar) ---- */
+.sync-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sync-chip.ok {
+  background: var(--brand-soft);
+  border-color: rgba(31, 143, 55, 0.35);
+  color: var(--brand-dark);
+}
+.sync-chip.off {
+  background: #fdf3d7;
+  border-color: #ecd9a0;
+  color: #8a6d1a;
+}
+.sync-chip.err {
+  background: #fdeaed;
+  border-color: rgba(216, 75, 93, 0.4);
+  color: #c23246;
+}
+
 /* ---- Reparto multipago dentro del modal (abono / pago a proveedor) ---- */
 .modal-splits {
   display: grid;

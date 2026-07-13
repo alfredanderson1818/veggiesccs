@@ -1,36 +1,55 @@
 -- ============================================================================
---  SINCRONIZACION DEL SISTEMA — tabla business_state
+--  SINCRONIZACION DEL SISTEMA — tabla business_state  (v2, auto-reparable)
 --  Corre esto UNA vez en Supabase -> SQL Editor -> New query -> Run.
---  Guarda todo el estado del negocio (productos, ventas, cuentas, clientes...)
---  como un unico documento JSON compartido entre los dispositivos de los admins.
 --
---  Es idempotente y auto-reparable: si ya existe una tabla business_state a
---  medias (de un intento anterior), le agrega las columnas que falten y limpia
---  las politicas viejas. Se puede volver a correr sin problema.
+--  v2 arregla el caso de una tabla vieja creada a medias SIN clave unica en
+--  business_id: eso hacia fallar TODOS los guardados con el error
+--  "there is no unique or exclusion constraint matching the ON CONFLICT
+--  specification" (la nube nunca guardo nada). Este script:
+--   - si la tabla existe pero esta VACIA, la reconstruye limpia;
+--   - si tiene datos, agrega columnas faltantes + indice unico de respaldo;
+--   - trigger de updated_at, RLS solo-autenticados y realtime.
+--  Es idempotente: se puede correr varias veces sin problema.
 --
---  La VERSION es `updated_at`, que asigna el SERVIDOR (trigger de abajo). Como es
---  un reloj unico para todos, los dispositivos convergen al mismo estado.
---
---  ⚠️ SEGURIDAD IMPORTANTE: estas politicas permiten leer/escribir a cualquier
---  usuario AUTENTICADO. Como el sistema solo debe tener cuentas de admin, ve a
---     Supabase -> Authentication -> Sign In / Providers -> Email
---  y DESACTIVA "Allow new users to sign up".
---  Asi nadie puede auto-registrarse; solo entran los usuarios que TU crees a mano
---  (Authentication -> Users -> Add user), que son los unicos que veran costos y
---  datos de clientes. El sitio publico (anon) nunca tiene acceso a esta tabla.
+--  ⚠️ SEGURIDAD: ve a Authentication -> Sign In / Providers -> Email y
+--  DESACTIVA "Allow new users to sign up". Solo tus usuarios creados a mano
+--  deben poder entrar (esta tabla contiene costos y datos de clientes).
 -- ============================================================================
+
+-- 0) Si existe una tabla vieja VACIA (estructura desconocida), se reconstruye.
+do $$
+declare n bigint;
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'business_state'
+  ) then
+    execute 'select count(*) from public.business_state' into n;
+    if n = 0 then
+      drop table public.business_state;
+    end if;
+  end if;
+end $$;
 
 -- 1) Tabla + columnas (agrega solo lo que falte).
 create table if not exists public.business_state (
-  business_id text primary key
+  business_id text primary key,
+  data        jsonb       not null default '{}'::jsonb,
+  rev         bigint      not null default 0,
+  client_id   text,
+  updated_at  timestamptz not null default now()
 );
 alter table public.business_state add column if not exists data       jsonb       not null default '{}'::jsonb;
 alter table public.business_state add column if not exists rev        bigint      not null default 0;
 alter table public.business_state add column if not exists client_id  text;
 alter table public.business_state add column if not exists updated_at timestamptz not null default now();
 
+-- 1b) Respaldo: garantiza la clave unica que necesita el guardado (ON CONFLICT),
+--     por si la tabla venia de antes con datos y sin primary key.
+create unique index if not exists business_state_business_id_key
+  on public.business_state (business_id);
+
 -- 2) Trigger: el servidor pone updated_at = now() en cada insert/update.
---    Asi la "version" no depende del reloj de cada dispositivo.
 create or replace function public.business_state_touch()
 returns trigger
 language plpgsql
@@ -46,10 +65,9 @@ create trigger business_state_touch
   before insert or update on public.business_state
   for each row execute function public.business_state_touch();
 
--- 3) Seguridad por filas.
+-- 3) Seguridad por filas: SOLO usuarios autenticados (admins logueados).
 alter table public.business_state enable row level security;
 
--- Limpia TODAS las politicas previas de la tabla (por si quedo alguna abierta).
 do $$
 declare pol record;
 begin
@@ -61,7 +79,6 @@ begin
   end loop;
 end $$;
 
--- Solo usuarios autenticados (admins logueados). Ver el aviso de signups arriba.
 create policy "bs_select_auth"
   on public.business_state for select
   to authenticated using (true);
@@ -74,10 +91,18 @@ create policy "bs_update_auth"
   on public.business_state for update
   to authenticated using (true) with check (true);
 
--- 4) Realtime: para que un cambio en un equipo se vea en el otro al instante.
---    (Si ya estaba agregada, ignora el error "already member of publication".)
+-- 4) Realtime: cambios de un equipo se ven en el otro al instante.
 do $$
 begin
   alter publication supabase_realtime add table public.business_state;
 exception when duplicate_object then null;
 end $$;
+
+-- 5) Comprobacion final: esto debe devolver una fila con constraint_ok = true.
+select
+  exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and tablename = 'business_state'
+      and indexname in ('business_state_pkey', 'business_state_business_id_key')
+  ) as constraint_ok,
+  (select count(*) from public.business_state) as filas;

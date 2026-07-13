@@ -130,9 +130,33 @@ let cloudSyncing = false; // true mientras adopto un estado remoto (evita re-sub
 let cloudReady = false; // true tras el primer pull/push del arranque
 let cloudDirty = false; // hay cambios locales aun sin subir
 
+// Estado visible de la nube (chip en el sidebar + detalle en Configuracion).
+let cloudStatus = { state: 'starting', detail: '' }; // starting | ok | local | error
+
+function setCloudStatus(stateKey, detail) {
+  cloudStatus = { state: stateKey, detail: detail || '' };
+  const el = document.querySelector('[data-sync-chip]');
+  if (el) el.outerHTML = syncChipHtml();
+}
+
+function syncChipHtml() {
+  const time = getSyncedAt()
+    ? new Date(getSyncedAt()).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })
+    : '';
+  const map = {
+    starting: ['', '☁ Conectando...'],
+    ok: ['ok', `☁ Nube sincronizada${time ? ` · ${time}` : ''}`],
+    local: ['off', '☁ Solo en este equipo'],
+    error: ['err', '☁ Nube con error']
+  };
+  const [cls, label] = map[cloudStatus.state] || map.starting;
+  return `<div class="sync-chip ${cls}" data-sync-chip title="${cloudStatus.detail || 'Estado de la base de datos en la nube'}">${label}</div>`;
+}
+
 function scheduleCloudPush() {
   cloudDirty = true; // se registra SIEMPRE, aun antes de cloudReady, para no perderlo
   if (cloudSyncing || !cloudReady) return;
+  if (cloudStatus.state === 'local') return; // sin sesion: la nube esta bloqueada, no intentes subir
   if (cloudPushTimer) clearTimeout(cloudPushTimer);
   cloudPushTimer = setTimeout(cloudPushNow, 1200);
 }
@@ -146,8 +170,10 @@ async function cloudPushNow() {
   try {
     const ts = await pushRemoteState(serializeState(state));
     setSyncedAt(ts);
+    setCloudStatus('ok');
   } catch (err) {
     cloudDirty = true; // no se subio: sigue pendiente
+    setCloudStatus('error', err?.message || String(err));
     console.warn('Sync: no se pudo subir el estado —', err?.message || err);
   }
 }
@@ -183,10 +209,19 @@ function adoptRemoteState(remote) {
 
 async function initCloudSync() {
   try {
+    // Sin sesion (p.ej. vista previa) la nube esta bloqueada por seguridad:
+    // se trabaja local y el chip lo dice claro, sin intentos que fallen.
+    const { data } = await supabase.auth.getSession();
+    if (!data?.session) {
+      cloudReady = true;
+      setCloudStatus('local', 'Inicia sesion para sincronizar con la base de datos.');
+      return;
+    }
     const remote = await pullRemoteState();
     if (remote && isNewer(remote.updatedAt, getSyncedAt()) && !cloudDirty) {
       // El remoto es mas nuevo y no edite nada durante el arranque: lo adoptamos.
       adoptRemoteState(remote);
+      setCloudStatus('ok');
     } else {
       // No hay remoto, el local es igual/mas nuevo, o el usuario ya edito durante
       // el arranque (cloudDirty): subimos el local para NO perder ese trabajo.
@@ -205,6 +240,7 @@ async function initCloudSync() {
     });
   } catch (err) {
     cloudReady = true; // seguimos funcionando solo con localStorage
+    setCloudStatus('error', err?.message || String(err));
     console.warn('Sync no disponible (se trabaja local) —', err?.message || err);
   }
 }
@@ -374,6 +410,7 @@ function render() {
         <p class="eyebrow">Modulos</p>
         ${renderSidebarNav()}
         <div class="sidebar-footer">
+          ${syncChipHtml()}
           <button class="ghost-button" data-action="reset-storage">Restablecer este equipo</button>
           <button class="ghost-button" data-action="logout">Cerrar sesion</button>
           <small>Registrado como:<br><strong>${state.settings.userName}</strong></small>
@@ -971,14 +1008,18 @@ function renderSettings() {
         </div>
 
         <div class="settings-card">
-          <h3>Sistema</h3>
+          <h3>Base de datos (nube)</h3>
           <div class="settings-info">
-            <div><span>Sincronizacion</span><strong>${lastSync ? `Ultima: ${new Date(lastSync).toLocaleString('es-VE')}` : 'Aun sin sincronizar'}</strong></div>
+            <div><span>Estado</span><strong>${
+              { starting: 'Conectando...', ok: '✓ Sincronizada', local: 'Solo en este equipo', error: '⚠ Con error' }[cloudStatus.state] || cloudStatus.state
+            }</strong></div>
+            <div><span>Ultima sincronizacion</span><strong>${lastSync ? new Date(lastSync).toLocaleString('es-VE') : 'Nunca en este equipo'}</strong></div>
             <div><span>Productos</span><strong>${state.products.length}</strong></div>
             <div><span>Clientes</span><strong>${state.customers.length}</strong></div>
             <div><span>Ventas registradas</span><strong>${state.orders.length}</strong></div>
           </div>
-          <p class="muted-cell">La tasa BCV y su historial se manejan en Finanzas → Tasa BCV.</p>
+          ${cloudStatus.detail ? `<p class="muted-cell" style="text-align:left">${cloudStatus.detail}</p>` : ''}
+          <p class="muted-cell" style="text-align:left">Los datos se guardan en Supabase y se comparten entre todos los equipos donde inicies sesion. La tasa BCV se maneja en Finanzas → Tasa BCV.</p>
         </div>
       </div>
     </section>
@@ -1655,6 +1696,25 @@ function annulOrderById(orderId) {
           note: reversalNote
         })
       );
+    // Reversa de credito: si la venta genero cuenta por cobrar, se elimina y
+    // se devuelven los abonos ya cobrados (montos historicos exactos, buscando
+    // los movimientos originales de ese credito).
+    const receivable = state.receivables.find((r) => r.orderId === order.id);
+    if (receivable) {
+      const abonoPrefix = `Abono credito #${order.orderNumber} ·`;
+      const abonoReversals = state.accountMovements
+        .filter((mv) => typeof mv.note === 'string' && mv.note.startsWith(abonoPrefix) && mv.amount > 0)
+        .map((mv) =>
+          createAdjustmentMovement({
+            accountId: mv.accountId,
+            amount: -mv.amount,
+            currency: mv.currency,
+            note: `${reversalNote} (devolucion de abono)`
+          })
+        );
+      reversals.push(...abonoReversals);
+      state.receivables = state.receivables.filter((r) => r.orderId !== order.id);
+    }
     if (reversals.length) {
       state.accountMovements = [...reversals, ...state.accountMovements];
       state.accounts = applyMovements(state.accounts, reversals);
@@ -3247,9 +3307,9 @@ function submitAccountModal() {
       const movements = [];
       splits.forEach((s) => {
         if (isAbono) {
-          ({ receivable: updated } = addAbono(updated, { amountUsd: s.amountUsd, methodName: s.account.name, note: m.note }));
+          ({ receivable: updated } = addAbono(updated, { amountUsd: s.amountUsd, methodName: s.account.name, note: m.note, accountId: s.account.id }));
         } else {
-          ({ payable: updated } = addPago(updated, { amountUsd: s.amountUsd, methodName: s.account.name, note: m.note }));
+          ({ payable: updated } = addPago(updated, { amountUsd: s.amountUsd, methodName: s.account.name, note: m.note, accountId: s.account.id }));
         }
         const movementAmount =
           s.account.currency === 'VES'
