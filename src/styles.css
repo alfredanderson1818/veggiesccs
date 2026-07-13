@@ -321,7 +321,7 @@ p {
 
 .pos-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 430px;
+  grid-template-columns: minmax(0, 1fr) 390px;
   gap: 20px;
   align-items: start;
 }
@@ -407,20 +407,21 @@ textarea:focus {
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+  gap: 9px;
 }
 
 .product-card {
-  min-height: 166px;
+  min-height: 0;
   display: grid;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 10px 11px;
+  border-radius: 10px;
   color: var(--ink);
   background: white;
   border: 1px solid transparent;
   text-align: left;
+  align-content: start;
 }
 
 .product-card:hover {
@@ -431,7 +432,7 @@ textarea:focus {
 .product-card div {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .sku,
@@ -440,33 +441,36 @@ textarea:focus {
   align-items: center;
   width: fit-content;
   border-radius: 999px;
-  padding: 4px 9px;
+  padding: 2px 7px;
   background: var(--panel-soft);
   color: #5d6678;
   font-weight: 750;
+  font-size: 10.5px;
 }
 
 .stock {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 10.5px;
 }
 
 .product-card strong {
-  font-size: 18px;
+  font-size: 13px;
+  line-height: 1.2;
 }
 
 .product-card small {
   color: var(--muted);
   font-weight: 700;
+  font-size: 10.5px;
 }
 
 .product-card b {
   width: 100%;
-  padding: 10px;
+  padding: 5px 8px;
   border-radius: 999px;
   color: var(--brand);
   background: var(--brand-soft);
-  font-size: 20px;
+  font-size: 13.5px;
   text-align: center;
 }
 
@@ -475,15 +479,16 @@ textarea:focus {
   top: 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   max-height: calc(100vh - 40px);
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 18px;
+  border-radius: 14px;
+  padding: 14px;
   box-shadow: 0 12px 30px rgba(23, 32, 51, 0.05);
   scrollbar-width: thin;
+  font-size: 12.5px;
 }
 
 /* Evita que los hijos flex se encojan por debajo de su contenido (causaba que
@@ -568,17 +573,18 @@ textarea:focus {
 
 .pay-mode {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .pay-mode-btn {
-  padding: 10px;
+  padding: 8px 6px;
   border-radius: 8px;
   background: var(--panel-soft);
   border: 1px solid var(--line);
   color: var(--muted);
   font-weight: 800;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -601,44 +607,51 @@ textarea:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
 }
 
 .panel-title h2 {
   margin: 0;
+  font-size: 15.5px;
+  letter-spacing: -0.01em;
 }
 
 .panel-title span {
-  padding: 7px 10px;
+  padding: 4px 9px;
   border-radius: 999px;
   background: var(--brand-soft);
   color: var(--brand);
   font-weight: 850;
+  font-size: 10.5px;
 }
 
 .cart-list {
   display: grid;
-  gap: 11px;
-  min-height: 120px;
+  gap: 6px;
+  min-height: 70px;
 }
 
 .empty-cart {
   display: grid;
   place-items: center;
-  min-height: 150px;
+  min-height: 90px;
   border: 1px dashed #dce2ed;
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--muted);
   font-weight: 750;
+  font-size: 12px;
 }
 
 .cart-item {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) 72px 76px;
+  grid-template-columns: 20px minmax(0, 1fr) 62px 62px;
   align-items: center;
-  gap: 9px;
-  padding: 13px;
+  gap: 8px;
+  padding: 7px 9px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 9px;
+  background: white;
 }
 
 .cart-item button {
@@ -646,46 +659,86 @@ textarea:focus {
   color: var(--muted);
   background: transparent;
   cursor: pointer;
+  font-size: 13px;
+}
+
+.cart-item strong {
+  font-size: 12px;
+  line-height: 1.2;
+  display: block;
 }
 
 .cart-item small {
   color: var(--muted);
+  font-size: 10px;
+}
+
+.cart-item input {
+  padding: 6px 7px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  text-align: right;
 }
 
 .cart-item b {
   color: var(--brand);
   text-align: right;
+  font-size: 12px;
 }
 
 .tax-row {
   display: flex;
-  gap: 18px;
+  gap: 14px;
+  font-size: 12px;
 }
 
 .tax-row label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   color: var(--ink);
+  font-weight: 650;
 }
 
 .tax-row input {
   width: auto;
+  accent-color: var(--brand);
+}
+
+.notes-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  display: grid;
+  gap: 5px;
+}
+
+.notes-label textarea {
+  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
 }
 
 .payment-methods {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 6px;
 }
 
 .payment-chip {
-  padding: 12px;
-  border-radius: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
   border: 1px solid var(--line);
   background: white;
   color: var(--ink);
   text-align: left;
+}
+
+.payment-chip strong {
+  font-size: 12px;
 }
 
 .payment-chip.selected {
@@ -693,10 +746,15 @@ textarea:focus {
   background: var(--brand-soft);
 }
 
+.payment-chip.selected strong {
+  color: var(--brand);
+}
+
 .payment-chip small {
   display: block;
-  margin-top: 3px;
+  margin-top: 1px;
   color: var(--muted);
+  font-size: 10px;
 }
 
 /* ---- Pago mixto ---- */
@@ -934,15 +992,17 @@ textarea:focus {
 
 .totals-box {
   display: grid;
-  gap: 10px;
-  padding: 16px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 11px 13px;
+  border-radius: 10px;
   background: var(--panel-soft);
+  font-size: 12px;
 }
 
 .totals-box div {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 10px;
 }
 
@@ -954,23 +1014,30 @@ textarea:focus {
 .totals-box small {
   color: var(--muted);
   font-weight: 650;
+  font-size: 10.5px;
 }
 
 .grand-total {
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--line);
+}
+
+.grand-total span {
+  font-size: 13px;
+  color: var(--ink);
 }
 
 .grand-total strong {
   color: var(--brand);
-  font-size: 24px;
+  font-size: 19px;
 }
 
 .finish-button,
 .quote-button {
-  padding: 15px;
-  border-radius: 8px;
+  padding: 12px;
+  border-radius: 9px;
   font-weight: 900;
+  font-size: 13px;
 }
 
 .finish-button {
@@ -2550,6 +2617,122 @@ textarea:focus {
   .import-card:hover { transform: none; box-shadow: var(--shadow-sm), var(--gloss); }
 }
 
+/* ==================== UI COMPACTA (tipografia general mas pequena) ==================== */
+:root {
+  font-size: 14px;
+}
+body {
+  font-size: 13.5px;
+}
+.topbar h1 {
+  font-size: clamp(21px, 2.1vw, 28px);
+  letter-spacing: -0.03em;
+}
+.topbar {
+  margin-bottom: 14px;
+}
+.eyebrow {
+  font-size: 10.5px;
+}
+.section-heading h2 {
+  font-size: 17px;
+  margin-bottom: 2px;
+}
+.section-heading p {
+  font-size: 12px;
+}
+.primary-button,
+.coral-button {
+  min-width: 0;
+  padding: 11px 18px;
+  font-size: 13px;
+}
+.primary-button.compact,
+.ghost-button.compact {
+  padding: 8px 13px;
+  font-size: 12px;
+}
+.nav-label {
+  font-size: 13px;
+}
+.subtab {
+  font-size: 12.5px;
+}
+th,
+td {
+  padding: 9px 12px;
+  font-size: 12.5px;
+}
+th {
+  font-size: 10.5px;
+}
+.metric-card span {
+  font-size: 11.5px;
+}
+.metric-card strong {
+  font-size: 20px;
+  margin: 6px 0 3px;
+}
+.metric-card small {
+  font-size: 11px;
+}
+.client-input,
+.search-row input,
+.control-strip input,
+.control-strip select {
+  font-size: 13px;
+}
+.customer-selected {
+  padding: 8px 11px;
+  font-size: 12px;
+}
+.credit-note {
+  padding: 9px 11px;
+  font-size: 11.5px;
+  border-radius: 9px;
+}
+.credit-due input {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.mixed-row {
+  padding: 6px 8px;
+}
+.mixed-meta strong {
+  font-size: 12px;
+}
+.mixed-meta small {
+  font-size: 10px;
+}
+.mixed-input input {
+  width: 78px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.mixed-status {
+  padding: 7px 10px;
+  font-size: 11.5px;
+}
+.expand-button {
+  font-size: 12px;
+}
+.quote-button {
+  font-size: 12px;
+  padding: 10px;
+}
+.checkout-table th,
+.checkout-table td {
+  padding: 8px 10px;
+}
+.group-head > strong {
+  font-size: 14px;
+}
+.group-meta {
+  font-size: 12px;
+}
+.movement-row {
+  font-size: 12.5px;
+}
 
 @media (max-width: 1180px) {
   .inventory-grid {
