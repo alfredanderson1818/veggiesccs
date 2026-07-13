@@ -71,6 +71,7 @@ import {
 } from './domain/invoiceImport.mjs';
 import { loadInitialState, persistState, serializeState, hydrateState } from './state/appState.mjs';
 import { PM_PRODUCTS, PM_PAYABLES } from './data/pmProducts.mjs';
+import { normalizePhoneVE, fillTemplate, waLink, DEFAULT_TEMPLATES } from './domain/messaging.mjs';
 import { supabase } from './supabase/client.mjs';
 import {
   getClientId,
@@ -314,7 +315,8 @@ const FOCUS_ATTRS = [
   'data-item-price',
   'data-item-cost',
   'data-set-field',
-  'data-edit-field'
+  'data-edit-field',
+  'data-msg-template'
 ];
 
 function captureFocus() {
@@ -360,7 +362,7 @@ const SECTIONS = [
   { key: 'inicio', label: 'Inicio', ic: '🏠', views: [['dashboard', 'Resumen']] },
   { key: 'ventas', label: 'Ventas', ic: '🛒', views: [['pos', 'Punto de venta'], ['weborders', 'Pedidos web'], ['import', 'Importar factura'], ['galpon', 'Galpon'], ['documents', 'Documentos']] },
   { key: 'catalogo', label: 'Catalogo', ic: '🥬', views: [['catalog', 'Productos'], ['inventory', 'Inventario']] },
-  { key: 'clientes', label: 'Clientes', ic: '👥', views: [['customers', 'Cartera']] },
+  { key: 'clientes', label: 'Clientes', ic: '👥', views: [['customers', 'Cartera'], ['messaging', 'Mensajeria']] },
   { key: 'finanzas', label: 'Finanzas', ic: '💵', views: [['accounts', 'Cuentas y caja'], ['receivables', 'Cuentas por cobrar'], ['payables', 'Cuentas por pagar'], ['reports', 'Reportes'], ['rates', 'Tasa BCV']] },
   { key: 'config', label: 'Configuracion', ic: '⚙️', views: [['settings', 'Configuracion']] }
 ];
@@ -440,6 +442,7 @@ function render() {
         ${activeView === 'rates' ? renderRates() : ''}
         ${activeView === 'documents' ? renderDocuments() : ''}
         ${activeView === 'customers' ? renderCustomers() : ''}
+        ${activeView === 'messaging' ? renderMessaging() : ''}
         ${activeView === 'receivables' ? renderReceivables() : ''}
         ${activeView === 'payables' ? renderPayables() : ''}
         ${activeView === 'accounts' ? renderAccounts() : ''}
@@ -2031,6 +2034,217 @@ function filteredCustomers() {
   );
 }
 
+// ==================== MENSAJERIA (avisos por WhatsApp) ====================
+let messagingSegment = 'cobranza';
+
+const MESSAGING_SEGMENTS = [
+  ['cobranza', '💵 Cobranza', 'Clientes con saldo pendiente o vencido'],
+  ['pedido', '📦 Pedidos de hoy', 'Avisar que su pedido esta confirmado'],
+  ['precios', '🥬 Precios del dia', 'Aviso de mercancia fresca a clientes activos'],
+  ['dormidos', '😴 Dormidos', 'Clientes sin compras en los ultimos 30 dias']
+];
+
+function messageTemplates() {
+  return { ...DEFAULT_TEMPLATES, ...(state.settings.messageTemplates || {}) };
+}
+
+function firstName(fullName) {
+  return String(fullName || '').trim().split(/\s+/)[0] || 'cliente';
+}
+
+// Construye la lista de destinatarios del segmento con sus variables.
+function buildMessagingRows(segment) {
+  const today = todayIso();
+  const findCustomer = (id) => state.customers.find((c) => c.id === id);
+
+  if (segment === 'cobranza') {
+    const byCustomer = new Map();
+    state.receivables
+      .filter((r) => r.status !== 'paid')
+      .forEach((r) => {
+        const key = r.customerId || r.customerName;
+        const g = byCustomer.get(key) || { receivables: [], customerId: r.customerId, name: r.customerName };
+        g.receivables.push(r);
+        byCustomer.set(key, g);
+      });
+    return Array.from(byCustomer.values())
+      .map((g) => {
+        const customer = g.customerId ? findCustomer(g.customerId) : null;
+        const balance = roundMoney(g.receivables.reduce((s, r) => s + receivableBalance(r), 0));
+        const due = g.receivables.map((r) => r.dueDate).filter(Boolean).sort()[0] || null;
+        const overdueDays = due && due < today ? Math.round((new Date(today) - new Date(due)) / 86400000) : 0;
+        const vencidoTxt = due
+          ? overdueDays > 0
+            ? ` que vencio el ${due} (hace ${overdueDays} dia${overdueDays === 1 ? '' : 's'})`
+            : ` que vence el ${due}`
+          : '';
+        return {
+          key: g.customerId || g.name,
+          customerId: g.customerId,
+          name: g.name,
+          phone: customer?.phone || '',
+          detail: `Debe ${formatUsd(balance)}${due ? ` · vence ${due}` : ''}${overdueDays > 0 ? ' · VENCIDA' : ''}`,
+          overdue: overdueDays > 0,
+          vars: { nombre: firstName(g.name), saldo: formatUsd(balance), vencidoTxt }
+        };
+      })
+      .sort((a, b) => Number(b.overdue) - Number(a.overdue));
+  }
+
+  if (segment === 'pedido') {
+    return state.orders
+      .filter((o) => o.status === 'paid' && o.date === today)
+      .map((o) => {
+        const customer = o.customerId ? findCustomer(o.customerId) : null;
+        return {
+          key: `o-${o.id}`,
+          customerId: o.customerId,
+          name: (o.customerName || '').trim() || 'Mostrador',
+          phone: customer?.phone || '',
+          detail: `Pedido #${o.orderNumber} · ${formatUsd(o.totals?.totalUsd || 0)}`,
+          vars: {
+            nombre: firstName(o.customerName || 'cliente'),
+            pedido: o.orderNumber,
+            total: formatUsd(o.totals?.totalUsd || 0)
+          }
+        };
+      });
+  }
+
+  if (segment === 'dormidos') {
+    const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const recentCustomerIds = new Set(
+      state.orders.filter((o) => o.status === 'paid' && o.date >= cutoff).map((o) => o.customerId).filter(Boolean)
+    );
+    return state.customers
+      .filter((c) => (c.status || '').toLowerCase() === 'activo' && !recentCustomerIds.has(c.id))
+      .map((c) => ({
+        key: c.id,
+        customerId: c.id,
+        name: c.name,
+        phone: c.phone || '',
+        detail: `${c.totalOrders || 0} compras historicas`,
+        vars: { nombre: firstName(c.name) }
+      }));
+  }
+
+  // precios: activos con telefono
+  return state.customers
+    .filter((c) => (c.status || '').toLowerCase() === 'activo')
+    .map((c) => ({
+      key: c.id,
+      customerId: c.id,
+      name: c.name,
+      phone: c.phone || '',
+      detail: c.topProduct ? `Suele pedir: ${c.topProduct}` : '',
+      vars: { nombre: firstName(c.name) }
+    }));
+}
+
+function lastMessageFor(key) {
+  return (state.messageLog || []).find((m) => m.key === key) || null;
+}
+
+function renderMessaging() {
+  const template = messageTemplates()[messagingSegment];
+  const allRows = buildMessagingRows(messagingSegment);
+  const rows = allRows.filter((r) => normalizePhoneVE(r.phone));
+  const sinTelefono = allRows.length - rows.length;
+  const today = todayIso();
+  const sentToday = rows.filter((r) => {
+    const last = lastMessageFor(r.key);
+    return last && last.segment === messagingSegment && (last.sentAt || '').slice(0, 10) === today;
+  }).length;
+  const segMeta = MESSAGING_SEGMENTS.find(([k]) => k === messagingSegment);
+
+  return `
+    <section class="customers-panel">
+      <div class="section-heading">
+        <h2>Mensajeria</h2>
+        <p>Avisos por WhatsApp con tu numero: el mensaje sale listo, tu solo das enviar.</p>
+      </div>
+      <div class="msg-segments">
+        ${MESSAGING_SEGMENTS.map(
+          ([k, label]) =>
+            `<button class="msg-segment ${messagingSegment === k ? 'active' : ''}" data-msg-segment="${k}">${label}</button>`
+        ).join('')}
+      </div>
+      <div class="msg-template-card">
+        <div class="msg-template-head">
+          <strong>Plantilla · ${segMeta?.[1] || ''}</strong>
+          <button class="ghost-button compact" data-msg-reset>Restaurar original</button>
+        </div>
+        <textarea rows="3" data-msg-template>${template}</textarea>
+        <small class="muted-cell" style="text-align:left">Variables: {nombre}${messagingSegment === 'cobranza' ? ', {saldo}, {vencidoTxt}' : ''}${messagingSegment === 'pedido' ? ', {pedido}, {total}' : ''} — ${segMeta?.[2] || ''}. Se guarda sola.</small>
+      </div>
+      <div class="msg-counter">
+        <strong>${rows.length}</strong> cliente${rows.length === 1 ? '' : 's'} en la lista
+        · <span class="${sentToday ? 'pos-cell' : ''}">${sentToday} avisado${sentToday === 1 ? '' : 's'} hoy</span>
+        ${sinTelefono ? `· <span class="muted-cell">${sinTelefono} sin telefono valido (no salen en la lista)</span>` : ''}
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Cliente</th><th>Telefono</th><th>Detalle</th><th>Ultimo aviso</th><th></th></tr></thead>
+          <tbody>
+            ${
+              rows.length
+                ? rows
+                    .map((r, i) => {
+                      const last = lastMessageFor(r.key);
+                      const doneToday = last && last.segment === messagingSegment && (last.sentAt || '').slice(0, 10) === today;
+                      return `
+                        <tr class="${r.overdue ? 'row-overdue' : ''}">
+                          <td><strong>${r.name}</strong></td>
+                          <td>${r.phone}</td>
+                          <td>${r.detail || ''}</td>
+                          <td>${last ? `<small class="muted-cell">${new Date(last.sentAt).toLocaleDateString('es-VE')} · ${MESSAGING_SEGMENTS.find(([k]) => k === last.segment)?.[1]?.slice(2) || last.segment}</small>` : '<small class="muted-cell">Nunca</small>'}</td>
+                          <td class="msg-actions">
+                            ${doneToday ? '<span class="status-pill delivered">✓ Hoy</span>' : ''}
+                            <button class="primary-button compact" data-send-msg="${i}">Enviar</button>
+                            <button class="ghost-button compact" data-copy-msg="${i}" title="Copiar el mensaje">Copiar</button>
+                          </td>
+                        </tr>`;
+                    })
+                    .join('')
+                : `<tr><td colspan="5" class="muted-cell">No hay clientes en este segmento ahora mismo.</td></tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function sendSegmentMessage(index, { copyOnly = false } = {}) {
+  const rows = buildMessagingRows(messagingSegment).filter((r) => normalizePhoneVE(r.phone));
+  const row = rows[index];
+  if (!row) return;
+  const text = fillTemplate(messageTemplates()[messagingSegment], row.vars);
+  if (copyOnly) {
+    navigator.clipboard?.writeText(text);
+  } else {
+    const link = waLink(row.phone, text);
+    if (!link) return;
+    window.open(link, '_blank');
+  }
+  setState(() => {
+    state.messageLog = [
+      {
+        id: crypto.randomUUID(),
+        key: row.key,
+        customerId: row.customerId || null,
+        name: row.name,
+        phone: row.phone,
+        segment: messagingSegment,
+        text,
+        via: copyOnly ? 'copiado' : 'whatsapp',
+        sentAt: new Date().toISOString()
+      },
+      ...(state.messageLog || [])
+    ].slice(0, 500);
+  });
+}
+
 function renderCustomers() {
   const all = state.customers;
   const rows = filteredCustomers();
@@ -2172,9 +2386,39 @@ async function loadWebOrderToSystem(id) {
     channel: state.settings.channel,
     location: state.settings.location
   });
+  // Vincula (o CREA) el cliente en la cartera a partir del pedido web:
+  // busca por telefono normalizado; si no existe, lo crea con nombre,
+  // telefono y direccion. Asi el pedido queda asociado y se le puede dar
+  // credito, cobrar y avisar por Mensajeria.
+  const webPhone = normalizePhoneVE(order.customer_phone);
+  let customer = webPhone
+    ? state.customers.find((c) => normalizePhoneVE(c.phone) === webPhone)
+    : state.customers.find(
+        (c) => c.name.trim().toLowerCase() === String(order.customer_name || '').trim().toLowerCase() && order.customer_name
+      );
+  if (!customer && (order.customer_name || '').trim()) {
+    customer = {
+      id: `c-${crypto.randomUUID().slice(0, 8)}`,
+      number: String(state.customers.length + 1),
+      status: 'Activo',
+      name: order.customer_name.trim(),
+      idDoc: '',
+      phone: order.customer_phone || '',
+      email: '',
+      address: order.address || '',
+      topProduct: '',
+      totalOrders: 0,
+      totalSpent: 0,
+      avgTicket: 0
+    };
+    setState(() => {
+      state.customers = [customer, ...state.customers];
+    });
+  }
   draft = {
     ...draft,
-    customerName: order.customer_name || '',
+    customerId: customer?.id || null,
+    customerName: customer?.name || order.customer_name || '',
     notes: `Pedido web · Tel: ${order.customer_phone || '—'} · Dir: ${order.address || '—'}`
   };
   (Array.isArray(order.items) ? order.items : []).forEach((it) => {
@@ -3540,6 +3784,35 @@ function bindEvents() {
   document.querySelector('[data-action="new-payable"]')?.addEventListener('click', () => {
     editModal = { kind: 'payable', id: null, values: { supplierName: '', concept: '', totalUsd: '', dueDate: defaultCreditDue(), note: '' } };
     render();
+  });
+
+  // Mensajeria
+  document.querySelectorAll('[data-msg-segment]').forEach((button) => {
+    button.addEventListener('click', () => {
+      messagingSegment = button.dataset.msgSegment;
+      render();
+    });
+  });
+  document.querySelector('[data-msg-template]')?.addEventListener('change', (event) => {
+    setState(() => {
+      state.settings.messageTemplates = {
+        ...(state.settings.messageTemplates || {}),
+        [messagingSegment]: event.target.value
+      };
+    });
+  });
+  document.querySelector('[data-msg-reset]')?.addEventListener('click', () => {
+    setState(() => {
+      const t = { ...(state.settings.messageTemplates || {}) };
+      delete t[messagingSegment];
+      state.settings.messageTemplates = t;
+    });
+  });
+  document.querySelectorAll('[data-send-msg]').forEach((button) => {
+    button.addEventListener('click', () => sendSegmentMessage(Number(button.dataset.sendMsg)));
+  });
+  document.querySelectorAll('[data-copy-msg]').forEach((button) => {
+    button.addEventListener('click', () => sendSegmentMessage(Number(button.dataset.copyMsg), { copyOnly: true }));
   });
 
   // Configuracion: auto-guardado al salir de cada campo.

@@ -13,6 +13,7 @@ export const STATE_KEYS = [
   'returns',
   'receivables',
   'payables',
+  'messageLog',
   'rateHistory',
   'rateAudit',
   'settings',
@@ -51,6 +52,7 @@ export function loadInitialState() {
     returns: loadValue('returns', []),
     receivables: loadValue('receivables', []),
     payables: loadValue('payables', []),
+    messageLog: loadValue('messageLog', []),
     rateHistory: loadValue('rateHistory', [
       { ...defaultSettings.exchangeRate, source: 'BCV', fetchedAt: new Date().toISOString() }
     ]),
@@ -72,6 +74,7 @@ export function persistState(state) {
   saveValue('returns', state.returns);
   saveValue('receivables', state.receivables);
   saveValue('payables', state.payables);
+  saveValue('messageLog', state.messageLog);
   saveValue('rateHistory', state.rateHistory);
   saveValue('rateAudit', state.rateAudit);
   saveValue('settings', state.settings);

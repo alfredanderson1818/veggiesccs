@@ -893,6 +893,64 @@ textarea:focus {
   color: var(--brand);
 }
 
+/* ---- Mensajeria ---- */
+.msg-segments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.msg-segment {
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.msg-segment.active {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand-dark);
+}
+.msg-template-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  margin-bottom: 12px;
+}
+.msg-template-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.msg-template-card textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+}
+.msg-counter {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 /* ---- Chip de estado de la nube (sidebar) ---- */
 .sync-chip {
   display: flex;
