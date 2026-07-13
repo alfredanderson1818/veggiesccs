@@ -72,6 +72,7 @@ import {
 import { loadInitialState, persistState, serializeState, hydrateState } from './state/appState.mjs';
 import { PM_PRODUCTS, PM_PAYABLES } from './data/pmProducts.mjs';
 import { normalizePhoneVE, fillTemplate, waLink, DEFAULT_TEMPLATES } from './domain/messaging.mjs';
+import { findSupplierMatch, createSupplier } from './domain/suppliers.mjs';
 import { supabase } from './supabase/client.mjs';
 import {
   getClientId,
@@ -3269,7 +3270,7 @@ function fieldRow(label, key, value, opts = {}) {
     </label>`;
   }
   return `<label>${label}
-    <input type="${opts.type || 'text'}" ${opts.step ? `step="${opts.step}"` : ''} data-edit-field="${key}" value="${value ?? ''}" placeholder="${opts.placeholder || ''}" />
+    <input type="${opts.type || 'text'}" ${opts.step ? `step="${opts.step}"` : ''} ${opts.list ? `list="${opts.list}" autocomplete="off"` : ''} data-edit-field="${key}" value="${value ?? ''}" placeholder="${opts.placeholder || ''}" />
   </label>`;
 }
 
@@ -3316,7 +3317,11 @@ function renderEditModal() {
   } else if (editModal.kind === 'payable') {
     title = editModal.id ? 'Editar cuenta por pagar' : 'Nueva cuenta por pagar';
     body = `
-      ${fieldRow('Proveedor', 'supplierName', v.supplierName, { placeholder: 'Nombre del proveedor' })}
+      ${fieldRow('Proveedor', 'supplierName', v.supplierName, { placeholder: 'Escribe y elige de la lista...', list: 'suppliers-datalist' })}
+      <datalist id="suppliers-datalist">
+        ${(state.suppliers || []).map((s) => `<option value="${s.name}"></option>`).join('')}
+      </datalist>
+      <small class="muted-cell" style="text-align:left;margin-top:-6px;">Si escribes un nombre parecido a uno guardado, se unifica con ese proveedor; si es nuevo, se guarda solo.</small>
       ${fieldRow('Concepto', 'concept', v.concept, { placeholder: 'Factura / compra / flete...' })}
       <div class="modal-grid-2">
         ${fieldRow('Monto (USD)', 'totalUsd', v.totalUsd, { type: 'number', step: '0.01' })}
@@ -3433,22 +3438,28 @@ function submitEditModal() {
     if (!num(v.totalUsd)) return window.alert('El monto debe ser mayor a 0.');
     if (editModal.id) {
       setState(() => {
+        // Unifica el nombre con el registro de proveedores (o crea uno nuevo).
+        const supplier = resolveSupplier(v.supplierName);
         state.payables = state.payables.map((p) =>
           p.id === editModal.id
-            ? { ...p, supplierName: v.supplierName.trim(), concept: v.concept || '', totalUsd: num(v.totalUsd), dueDate: v.dueDate || null, note: v.note || '' }
+            ? { ...p, supplierName: supplier.name, supplierId: supplier.id, concept: v.concept || '', totalUsd: num(v.totalUsd), dueDate: v.dueDate || null, note: v.note || '' }
             : p
         );
       });
     } else {
       setState(() => {
+        const supplier = resolveSupplier(v.supplierName);
         state.payables = [
-          createPayable({
-            supplierName: v.supplierName.trim(),
-            concept: v.concept || '',
-            totalUsd: num(v.totalUsd),
-            dueDate: v.dueDate || null,
-            note: v.note || ''
-          }),
+          {
+            ...createPayable({
+              supplierName: supplier.name,
+              concept: v.concept || '',
+              totalUsd: num(v.totalUsd),
+              dueDate: v.dueDate || null,
+              note: v.note || ''
+            }),
+            supplierId: supplier.id
+          },
           ...state.payables
         ];
       });
@@ -3712,13 +3723,17 @@ function bindAccountModal() {
         return;
       }
       setState(() => {
-        const payable = createPayable({
-          supplierName: so.supplierName,
-          concept: `Orden galpon · pedido #${so.saleOrderNumber}`,
-          totalUsd: total,
-          dueDate: defaultCreditDue(),
-          sourceOrderId: so.id
-        });
+        const supplier = resolveSupplier(so.supplierName);
+        const payable = {
+          ...createPayable({
+            supplierName: supplier.name,
+            concept: `Orden galpon · pedido #${so.saleOrderNumber}`,
+            totalUsd: total,
+            dueDate: defaultCreditDue(),
+            sourceOrderId: so.id
+          }),
+          supplierId: supplier.id
+        };
         state.payables = [payable, ...state.payables];
         state.supplierOrders = state.supplierOrders.map((o) =>
           o.id === so.id ? { ...o, payableId: payable.id } : o
@@ -4376,6 +4391,53 @@ function ensurePmData() {
   }
 }
 ensurePmData();
+
+// Registro de proveedores: se alimenta de productos y cuentas por pagar ya
+// existentes, y canoniza los nombres de las cuentas legacy para que la vista
+// agrupe de verdad por proveedor.
+function ensureSuppliers() {
+  if (!Array.isArray(state.suppliers)) state.suppliers = [];
+  let changed = false;
+  const addIfNew = (rawName) => {
+    const name = String(rawName || '').trim();
+    if (!name || findSupplierMatch(state.suppliers, name)) return;
+    state.suppliers = [...state.suppliers, createSupplier({ name })];
+    changed = true;
+  };
+  state.products.forEach((p) => addIfNew(p.supplierName));
+  state.payables.forEach((p) => addIfNew(p.supplierName));
+  let payChanged = false;
+  const canon = state.payables.map((p) => {
+    const m = findSupplierMatch(state.suppliers, p.supplierName);
+    if (m && (p.supplierName !== m.name || p.supplierId !== m.id)) {
+      payChanged = true;
+      return { ...p, supplierName: m.name, supplierId: m.id };
+    }
+    return p;
+  });
+  if (payChanged) {
+    state.payables = canon;
+    changed = true;
+  }
+  if (changed) {
+    persistState(state);
+    scheduleCloudPush();
+  }
+}
+ensureSuppliers();
+
+// Devuelve el proveedor canonico para un nombre escrito a mano: si ya existe
+// uno igual o parecido lo reutiliza; si no, lo crea y lo guarda en el registro.
+// (Debe llamarse dentro de un setState: muta state.suppliers.)
+function resolveSupplier(rawName) {
+  const name = String(rawName || '').trim();
+  if (!name) return { id: null, name: 'Proveedor' };
+  const match = findSupplierMatch(state.suppliers, name);
+  if (match) return { id: match.id, name: match.name };
+  const created = createSupplier({ name });
+  state.suppliers = [...state.suppliers, created];
+  return created;
+}
 
 render();
 // Arranca la sincronizacion en la nube despues del primer render (no bloquea el
