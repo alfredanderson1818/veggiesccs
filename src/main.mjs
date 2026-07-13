@@ -70,6 +70,7 @@ import {
   preInvoiceTotals
 } from './domain/invoiceImport.mjs';
 import { loadInitialState, persistState, serializeState, hydrateState } from './state/appState.mjs';
+import { PM_PRODUCTS, PM_PAYABLES } from './data/pmProducts.mjs';
 import { supabase } from './supabase/client.mjs';
 import {
   getClientId,
@@ -4052,6 +4053,29 @@ function downloadQuote() {
   });
   openPrintWindow(documentHtml(doc), `${doc.label} ${doc.number}`);
 }
+
+// Migracion unica: linea PM (sprays Zonatov) al catalogo + sus 2 cuentas por
+// pagar. Idempotente (compara por sku/id): corre en cualquier equipo aunque ya
+// tenga datos guardados, y el cambio se sube a la nube.
+function ensurePmData() {
+  let changed = false;
+  const missing = PM_PRODUCTS.filter((p) => !state.products.some((x) => x.sku === p.sku));
+  if (missing.length) {
+    state.products = [...state.products, ...missing];
+    changed = true;
+  }
+  PM_PAYABLES.forEach((pay) => {
+    if (!state.payables.some((x) => x.id === pay.id)) {
+      state.payables = [pay, ...state.payables];
+      changed = true;
+    }
+  });
+  if (changed) {
+    persistState(state);
+    scheduleCloudPush();
+  }
+}
+ensurePmData();
 
 render();
 // Arranca la sincronizacion en la nube despues del primer render (no bloquea el
