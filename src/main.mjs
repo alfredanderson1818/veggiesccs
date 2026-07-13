@@ -221,6 +221,33 @@ async function initCloudSync() {
     }
     const remote = await pullRemoteState();
     if (remote && isNewer(remote.updatedAt, getSyncedAt()) && !cloudDirty) {
+      // Proteccion de primer arranque: si este equipo NUNCA ha sincronizado y
+      // tiene trabajo propio (ventas/creditos/caja), no se pisa en silencio —
+      // el usuario decide que version manda.
+      const neverSynced = !getSyncedAt();
+      const hasLocalWork =
+        state.orders.length + state.receivables.length + state.accountMovements.length > 0;
+      if (neverSynced && hasLocalWork) {
+        const useCloud = window.confirm(
+          'En la nube ya hay datos guardados (de otro equipo) y este equipo tambien tiene trabajo que NUNCA se ha sincronizado.\n\n' +
+            '¿Usar los datos de la NUBE en este equipo?\n\n' +
+            '• Aceptar: usar la NUBE (lo de este equipo se reemplaza).\n' +
+            '• Cancelar: conservar lo de ESTE equipo y subirlo (la nube se reemplaza).'
+        );
+        if (!useCloud) {
+          await cloudPushNow();
+          cloudReady = true;
+          if (cloudDirty) scheduleCloudPush();
+          subscribeRemoteState((incoming) => {
+            if (incoming.clientId === getClientId()) {
+              if (isNewer(incoming.updatedAt, getSyncedAt())) setSyncedAt(incoming.updatedAt);
+              return;
+            }
+            if (isNewer(incoming.updatedAt, getSyncedAt())) adoptRemoteState(incoming);
+          });
+          return;
+        }
+      }
       // El remoto es mas nuevo y no edite nada durante el arranque: lo adoptamos.
       adoptRemoteState(remote);
       setCloudStatus('ok');
