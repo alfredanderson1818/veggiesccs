@@ -951,6 +951,13 @@ textarea:focus {
   white-space: nowrap;
 }
 
+/* ---- Respaldo ---- */
+.backup-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ---- Chip de estado de la nube (sidebar) ---- */
 .sync-chip {
   display: flex;

@@ -69,7 +69,7 @@ import {
   buildPreInvoiceRows,
   preInvoiceTotals
 } from './domain/invoiceImport.mjs';
-import { loadInitialState, persistState, serializeState, hydrateState } from './state/appState.mjs';
+import { loadInitialState, persistState, serializeState, hydrateState, STATE_KEYS } from './state/appState.mjs';
 import { PM_PRODUCTS, PM_PAYABLES } from './data/pmProducts.mjs';
 import { normalizePhoneVE, fillTemplate, waLink, DEFAULT_TEMPLATES } from './domain/messaging.mjs';
 import { findSupplierMatch, createSupplier } from './domain/suppliers.mjs';
@@ -1070,7 +1070,12 @@ function renderSettings() {
             <div><span>Ventas registradas</span><strong>${state.orders.length}</strong></div>
           </div>
           ${cloudStatus.detail ? `<p class="muted-cell" style="text-align:left">${cloudStatus.detail}</p>` : ''}
-          <p class="muted-cell" style="text-align:left">Los datos se guardan en Supabase y se comparten entre todos los equipos donde inicies sesion. La tasa BCV se maneja en Finanzas → Tasa BCV.</p>
+          <div class="backup-actions">
+            <button class="ghost-button compact" data-action="export-backup">⬇ Descargar respaldo</button>
+            <button class="ghost-button compact" data-action="import-backup">⬆ Restaurar respaldo</button>
+            <input type="file" accept="application/json,.json" data-import-file style="display:none" />
+          </div>
+          <p class="muted-cell" style="text-align:left">Los datos se guardan en Supabase y se comparten entre todos los equipos donde inicies sesion. Descarga un respaldo cuando quieras: es un archivo con TODO el sistema, restaurable con un click.</p>
         </div>
       </div>
     </section>
@@ -3874,6 +3879,69 @@ function bindEvents() {
   });
   document.querySelectorAll('[data-copy-msg]').forEach((button) => {
     button.addEventListener('click', () => sendSegmentMessage(Number(button.dataset.copyMsg), { copyOnly: true }));
+  });
+
+  // Respaldo: descarga y restauracion del sistema completo.
+  document.querySelector('[data-action="export-backup"]')?.addEventListener('click', () => {
+    const payload = { app: 'veggies-ccs', exportedAt: new Date().toISOString(), data: serializeState(state) };
+    const blob = new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `respaldo-veggies-${todayIso()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  document.querySelector('[data-action="import-backup"]')?.addEventListener('click', () => {
+    document.querySelector('[data-import-file]')?.click();
+  });
+  document.querySelector('[data-import-file]')?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      // Acepta ambos formatos: el respaldo del boton ({app, data:{...}}) y un
+      // volcado crudo de localStorage ({"scv.phase1.products": "...", ...}).
+      let data = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+      if (data && typeof data === 'object' && Object.keys(data).some((k) => k.startsWith('scv.phase1.'))) {
+        const mapped = {};
+        STATE_KEYS.forEach((key) => {
+          const raw = data[`scv.phase1.${key}`];
+          if (raw !== undefined) {
+            try {
+              mapped[key] = JSON.parse(raw);
+            } catch {
+              /* valor corrupto: se omite */
+            }
+          }
+        });
+        data = mapped;
+      }
+      if (!data || typeof data !== 'object' || !Array.isArray(data.products)) {
+        throw new Error('El archivo no parece un respaldo del sistema.');
+      }
+      const resumen = `${(data.orders || []).length} ventas · ${(data.receivables || []).length} creditos · ${(data.payables || []).length} cuentas por pagar · ${(data.customers || []).length} clientes`;
+      const ok = window.confirm(
+        `Restaurar respaldo${parsed.exportedAt ? ` del ${new Date(parsed.exportedAt).toLocaleString('es-VE')}` : ''}\n(${resumen})\n\nReemplaza los datos de este equipo y de la nube con los del archivo. ¿Continuar?`
+      );
+      if (!ok) return;
+      hydrateState(state, data);
+      if (!state.paymentMethods.find((m) => m.id === selectedPaymentMethod)) {
+        selectedPaymentMethod = state.paymentMethods[0]?.id ?? null;
+      }
+      currentOrder = {
+        ...currentOrder,
+        orderNumber: nextOrderNumber(),
+        exchangeRate: state.settings.exchangeRate
+      };
+      persistState(state);
+      scheduleCloudPush();
+      render();
+      window.alert('Respaldo restaurado en este equipo. Si estas logueado, se esta subiendo a la nube ahora.');
+    } catch (err) {
+      window.alert(`No se pudo restaurar: ${err?.message || err}`);
+    } finally {
+      event.target.value = '';
+    }
   });
 
   // Configuracion: auto-guardado al salir de cada campo.
