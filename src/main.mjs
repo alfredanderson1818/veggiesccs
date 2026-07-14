@@ -188,10 +188,14 @@ function adoptRemoteState(remote) {
     cloudPushTimer = null;
   }
   cloudSyncing = true;
+  let migrated = false;
   try {
     hydrateState(state, remote.data);
     setSyncedAt(remote.updatedAt);
     cloudDirty = false;
+    // Si el snapshot remoto viene de una version anterior, aplicarle las
+    // migraciones (productos PM, registro de proveedores) SOBRE lo adoptado.
+    migrated = Boolean(ensurePmData()) || Boolean(ensureSuppliers());
     // Reconciliar estado derivado que pudo quedar apuntando a algo inexistente.
     if (!state.paymentMethods.find((m) => m.id === selectedPaymentMethod)) {
       selectedPaymentMethod = state.paymentMethods[0]?.id ?? null;
@@ -208,6 +212,8 @@ function adoptRemoteState(remote) {
   } finally {
     cloudSyncing = false; // pase lo que pase, el sync no queda bloqueado
   }
+  // Migraciones sobre el remoto adoptado: eso si se sube (remoto + delta).
+  if (migrated) scheduleCloudPush();
 }
 
 async function initCloudSync() {
@@ -252,9 +258,22 @@ async function initCloudSync() {
       // El remoto es mas nuevo y no edite nada durante el arranque: lo adoptamos.
       adoptRemoteState(remote);
       setCloudStatus('ok');
+    } else if (remote && isNewer(remote.updatedAt, getSyncedAt()) && cloudDirty) {
+      // Caso raro: el usuario alcanzo a editar mientras la app abria Y la nube
+      // tiene una version mas nueva. Nunca se pisa nada en silencio: se pregunta.
+      const pushLocal = window.confirm(
+        'Hiciste cambios en este equipo mientras la app abria, pero la nube tiene una version mas nueva (de otro equipo).\n\n' +
+          '• Aceptar: SUBIR lo de este equipo (la nube se reemplaza).\n' +
+          '• Cancelar: usar la NUBE (se pierden los cambios de hace un momento).'
+      );
+      if (pushLocal) {
+        await cloudPushNow();
+      } else {
+        adoptRemoteState(remote);
+        setCloudStatus('ok');
+      }
     } else {
-      // No hay remoto, el local es igual/mas nuevo, o el usuario ya edito durante
-      // el arranque (cloudDirty): subimos el local para NO perder ese trabajo.
+      // No hay remoto, o el local es igual/mas nuevo: subimos el local.
       await cloudPushNow();
     }
     cloudReady = true;
@@ -4385,12 +4404,8 @@ function ensurePmData() {
       changed = true;
     }
   });
-  if (changed) {
-    persistState(state);
-    scheduleCloudPush();
-  }
+  return changed;
 }
-ensurePmData();
 
 // Registro de proveedores: se alimenta de productos y cuentas por pagar ya
 // existentes, y canoniza los nombres de las cuentas legacy para que la vista
@@ -4419,12 +4434,18 @@ function ensureSuppliers() {
     state.payables = canon;
     changed = true;
   }
-  if (changed) {
-    persistState(state);
-    scheduleCloudPush();
-  }
+  return changed;
 }
-ensureSuppliers();
+
+// Las migraciones de arranque se guardan SOLO en este equipo, sin marcar la
+// nube como "pendiente de subir": son deterministas (todos los equipos las
+// aplican igual) y marcarlas hacia que un equipo recien abierto SUBIERA su
+// copia semilla encima de la nube buena en vez de bajarla.
+{
+  const migrated = ensurePmData();
+  const migratedSuppliers = ensureSuppliers();
+  if (migrated || migratedSuppliers) persistState(state);
+}
 
 // Devuelve el proveedor canonico para un nombre escrito a mano: si ya existe
 // uno igual o parecido lo reutiliza; si no, lo crea y lo guarda en el registro.

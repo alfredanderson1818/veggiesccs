@@ -98,11 +98,72 @@ begin
 exception when duplicate_object then null;
 end $$;
 
--- 5) Comprobacion final: esto debe devolver una fila con constraint_ok = true.
+-- 5) v3 — RESPALDO HISTORICO: antes de cada actualizacion se archiva la
+--    version anterior en business_state_history (ultimas 200). Si algun equipo
+--    llegara a subir una copia mala, la buena se recupera de aqui.
+create table if not exists public.business_state_history (
+  id          bigint generated always as identity primary key,
+  business_id text        not null,
+  data        jsonb       not null,
+  client_id   text,
+  saved_at    timestamptz not null default now()
+);
+
+alter table public.business_state_history enable row level security;
+
+do $$
+declare pol record;
+begin
+  for pol in
+    select policyname from pg_policies
+    where schemaname = 'public' and tablename = 'business_state_history'
+  loop
+    execute format('drop policy if exists %I on public.business_state_history', pol.policyname);
+  end loop;
+end $$;
+
+create policy "bsh_select_auth"
+  on public.business_state_history for select
+  to authenticated using (true);
+
+create policy "bsh_insert_auth"
+  on public.business_state_history for insert
+  to authenticated with check (true);
+
+create or replace function public.business_state_archive()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  insert into public.business_state_history (business_id, data, client_id)
+  values (old.business_id, old.data, old.client_id);
+  delete from public.business_state_history
+  where business_id = old.business_id
+    and id not in (
+      select id from public.business_state_history
+      where business_id = old.business_id
+      order by id desc
+      limit 200
+    );
+  return new;
+end;
+$$;
+
+drop trigger if exists business_state_archive on public.business_state;
+create trigger business_state_archive
+  before update on public.business_state
+  for each row execute function public.business_state_archive();
+
+-- 6) Comprobacion final: esto debe devolver una fila con constraint_ok = true.
 select
   exists (
     select 1 from pg_indexes
     where schemaname = 'public' and tablename = 'business_state'
       and indexname in ('business_state_pkey', 'business_state_business_id_key')
   ) as constraint_ok,
+  exists (
+    select 1 from pg_trigger
+    where tgname = 'business_state_archive'
+  ) as respaldo_ok,
   (select count(*) from public.business_state) as filas;
