@@ -2540,6 +2540,54 @@ function groupDebts(list, { nameOf, balanceOf, overdueFn, today }) {
   });
 }
 
+// Acordeon de deudas: que grupos (cliente/proveedor) estan abiertos y que
+// renglon muestra sus opciones de documento.
+let expandedDebtGroups = new Set();
+let expandedDebtRow = null;
+
+// Cabecera plegable compartida por Cuentas por cobrar y por pagar.
+function renderGroupBlock(g, { kind, label, tableHtml }) {
+  const key = `${kind}:${g.name}`;
+  const open = expandedDebtGroups.has(key);
+  return `
+    <div class="group-block ${g.hasOverdue ? 'has-overdue' : ''} ${open ? 'open' : ''}">
+      <button type="button" class="group-head" data-debt-group="${key}" aria-expanded="${open}">
+        <span class="group-caret">${open ? '▾' : '▸'}</span>
+        <strong>${g.name}</strong>
+        <span class="group-meta">
+          ${g.hasOverdue ? '<span class="due-badge overdue">Vencido</span>' : ''}
+          <span>${g.openCount ? `${g.openCount} pendiente${g.openCount === 1 ? '' : 's'}` : 'Al dia'}</span>
+          <strong class="${g.balance > 0 ? 'neg-cell' : 'pos-cell'}">${label} ${formatUsd(g.balance)}</strong>
+        </span>
+      </button>
+      ${open ? `<div class="table-wrap">${tableHtml}</div>` : ''}
+    </div>
+  `;
+}
+
+// Opciones de documento de un pedido (se despliegan al tocar el renglon).
+function renderOrderDocActions(orderId, colspan) {
+  const order = state.orders.find((o) => o.id === orderId);
+  if (!order) {
+    return `<tr class="debt-actions-row"><td colspan="${colspan}"><span class="muted-cell">Este credito no tiene un pedido vinculado.</span></td></tr>`;
+  }
+  return `
+    <tr class="debt-actions-row">
+      <td colspan="${colspan}">
+        <div class="docs-actions">
+          <span class="docs-actions-label">Pedido #${order.orderNumber}:</span>
+          <button class="ghost-button compact" data-doc="factura|${order.id}">Factura</button>
+          <button class="ghost-button compact" data-doc="nota_entrega|${order.id}">Nota entrega</button>
+          <button class="ghost-button compact" data-doc="recibo|${order.id}">Recibo</button>
+          <button class="ghost-button compact" data-doc="cotizacion|${order.id}">Cotizacion</button>
+          <button class="ghost-button compact" data-thermal="${order.id}">Termico</button>
+          <button class="wa-button compact" data-wa="${order.id}">WhatsApp</button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 function renderReceivables() {
   const today = todayIso();
   const summary = receivablesSummary(state.receivables, today);
@@ -2551,26 +2599,21 @@ function renderReceivables() {
     today
   });
 
-  const groupHtml = (g) => `
-    <div class="group-block ${g.hasOverdue ? 'has-overdue' : ''}">
-      <div class="group-head">
-        <strong>${g.name}</strong>
-        <div class="group-meta">
-          ${g.hasOverdue ? '<span class="due-badge overdue">Vencido</span>' : ''}
-          <span>${g.openCount ? `${g.openCount} pendiente${g.openCount === 1 ? '' : 's'}` : 'Al dia'}</span>
-          <strong class="${g.balance > 0 ? 'neg-cell' : 'pos-cell'}">Debe ${formatUsd(g.balance)}</strong>
-        </div>
-      </div>
-      <div class="table-wrap">
+  const groupHtml = (g) =>
+    renderGroupBlock(g, {
+      kind: 'cobrar',
+      label: 'Debe',
+      tableHtml: `
         <table>
           <thead><tr><th>Pedido</th><th>Fecha</th><th>Vence</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
           <tbody>
             ${g.items
               .map((r) => {
                 const overdue = isOverdue(r, today);
+                const open = expandedDebtRow === r.id;
                 return `
-                  <tr class="${overdue ? 'row-overdue' : ''}">
-                    <td>#${r.orderNumber}</td>
+                  <tr class="debt-row ${overdue ? 'row-overdue' : ''} ${open ? 'open' : ''}" data-debt-row="${r.id}" title="Toca para ver la factura y otros documentos">
+                    <td><span class="row-caret">${open ? '▾' : '▸'}</span> #${r.orderNumber}</td>
                     <td>${r.date}</td>
                     <td>${dueCellFor(r, isOverdue, today)}</td>
                     <td>${formatUsd(r.totalUsd)}</td>
@@ -2578,14 +2621,14 @@ function renderReceivables() {
                     <td><strong>${formatUsd(receivableBalance(r))}</strong></td>
                     <td><span class="status-pill ${overdue ? 'annulled' : r.status === 'paid' ? 'delivered' : r.status === 'partial' ? 'prepared' : 'pending'}">${overdue ? 'Vencida' : statusLabels[r.status] || r.status}</span></td>
                     <td>${r.status === 'paid' ? '' : `<button class="primary-button compact" data-abono="${r.id}">Abonar</button>`}</td>
-                  </tr>`;
+                  </tr>
+                  ${open ? renderOrderDocActions(r.orderId, 8) : ''}`;
               })
               .join('')}
           </tbody>
         </table>
-      </div>
-    </div>
-  `;
+      `
+    });
 
   return `
     <section class="customers-panel">
@@ -2620,17 +2663,11 @@ function renderPayables() {
     today
   });
 
-  const groupHtml = (g) => `
-    <div class="group-block ${g.hasOverdue ? 'has-overdue' : ''}">
-      <div class="group-head">
-        <strong>${g.name}</strong>
-        <div class="group-meta">
-          ${g.hasOverdue ? '<span class="due-badge overdue">Vencido</span>' : ''}
-          <span>${g.openCount ? `${g.openCount} pendiente${g.openCount === 1 ? '' : 's'}` : 'Al dia'}</span>
-          <strong class="${g.balance > 0 ? 'neg-cell' : 'pos-cell'}">Debes ${formatUsd(g.balance)}</strong>
-        </div>
-      </div>
-      <div class="table-wrap">
+  const groupHtml = (g) =>
+    renderGroupBlock(g, {
+      kind: 'pagar',
+      label: 'Debes',
+      tableHtml: `
         <table>
           <thead><tr><th>Concepto</th><th>Fecha</th><th>Vence</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
           <tbody>
@@ -2652,9 +2689,8 @@ function renderPayables() {
               .join('')}
           </tbody>
         </table>
-      </div>
-    </div>
-  `;
+      `
+    });
 
   return `
     <section class="customers-panel">
@@ -3660,6 +3696,24 @@ function bindAccountModal() {
     selectedAccountId = null;
     render();
   });
+  // Acordeon de cobrar/pagar: abrir-cerrar cliente/proveedor y ver documentos.
+  document.querySelectorAll('[data-debt-group]').forEach((head) => {
+    head.addEventListener('click', () => {
+      const key = head.dataset.debtGroup;
+      if (expandedDebtGroups.has(key)) expandedDebtGroups.delete(key);
+      else expandedDebtGroups.add(key);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-debt-row]').forEach((row) => {
+    row.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return; // los botones internos hacen lo suyo
+      const id = row.dataset.debtRow;
+      expandedDebtRow = expandedDebtRow === id ? null : id;
+      render();
+    });
+  });
+
   document.querySelectorAll('[data-abono]').forEach((button) => {
     button.addEventListener('click', () => {
       accountModal = { type: 'abono', receivableId: button.dataset.abono, splits: {}, note: '' };
