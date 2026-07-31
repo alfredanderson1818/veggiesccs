@@ -73,6 +73,7 @@ import { loadInitialState, persistState, serializeState, hydrateState, STATE_KEY
 import { PM_PRODUCTS, PM_PAYABLES } from './data/pmProducts.mjs';
 import { normalizePhoneVE, fillTemplate, waLink, DEFAULT_TEMPLATES } from './domain/messaging.mjs';
 import { findSupplierMatch, createSupplier } from './domain/suppliers.mjs';
+import { aiItemsToParserItems, aiInvoiceMeta } from './domain/aiInvoice.mjs';
 import { supabase } from './supabase/client.mjs';
 import {
   getClientId,
@@ -91,7 +92,15 @@ let search = '';
 let selectedPaymentMethod = state.paymentMethods[0].id;
 let inventoryForm = { mode: 'purchase', productId: '', quantity: '', unitCostUsd: '', note: '' };
 let bcvStatus = '';
-let importState = { rawText: '', rows: [], status: '', marginPct: Number(state.settings.importMarginPct ?? 30), busy: false };
+let importState = {
+  rawText: '',
+  rows: [],
+  status: '',
+  marginPct: Number(state.settings.importMarginPct ?? 30),
+  busy: false,
+  meta: null, // encabezado detectado por la IA (proveedor, credito, vencimiento...)
+  payableCreated: false
+};
 let customerSearch = '';
 let accountModal = null;
 let customerQuery = '';
@@ -1073,7 +1082,7 @@ function renderSettings() {
           <div class="backup-actions">
             <button class="ghost-button compact" data-action="export-backup">⬇ Descargar respaldo</button>
             <button class="ghost-button compact" data-action="import-backup">⬆ Restaurar respaldo</button>
-            <input type="file" accept="application/json,.json" data-import-file style="display:none" />
+            <input type="file" accept="application/json,.json" data-restore-file style="display:none" />
           </div>
           <p class="muted-cell" style="text-align:left">Los datos se guardan en Supabase y se comparten entre todos los equipos donde inicies sesion. Descarga un respaldo cuando quieras: es un archivo con TODO el sistema, restaurable con un click.</p>
         </div>
@@ -1801,10 +1810,15 @@ function renderImport() {
       </div>
 
       <div class="import-inputs">
+        <div class="import-card ai-card">
+          <h3>🤖 Leer con IA <span class="ai-badge">Recomendado</span></h3>
+          <input type="file" accept="image/*" data-import-ai-file ${importState.busy ? 'disabled' : ''} />
+          <small>Claude lee la foto completa: proveedor, renglones, descuento y vencimiento. Tu revisas y confirmas.</small>
+        </div>
         <div class="import-card">
-          <h3>Subir foto</h3>
+          <h3>Subir foto (OCR clasico)</h3>
           <input type="file" accept="image/*" data-import-file ${importState.busy ? 'disabled' : ''} />
-          <small>La app lee la imagen con OCR. Funciona mejor con fotos rectas y nitidas.</small>
+          <small>Respaldo sin IA. Funciona mejor con fotos rectas y nitidas.</small>
         </div>
         <div class="import-card">
           <h3>Pegar texto</h3>
@@ -1814,6 +1828,7 @@ function renderImport() {
       </div>
 
       ${importState.status ? `<div class="rate-status">${importState.status}</div>` : ''}
+      ${renderImportMeta()}
 
       ${
         rows.length
@@ -1891,6 +1906,133 @@ function importStatusMessage() {
   if (!total) return 'No se detectaron renglones validos. Revisa el texto o pega manualmente.';
   const matched = importState.rows.filter((r) => r.productId).length;
   return `Se detectaron ${total} renglones · ${matched} vinculados al catalogo, ${total - matched} sin coincidencia. Revisa y corrige antes de cargar.`;
+}
+
+// Encabezado detectado por la IA: proveedor, tipo de pago y cuenta por pagar.
+function renderImportMeta() {
+  const meta = importState.meta;
+  if (!meta) return '';
+  const supplierMatch = meta.proveedor ? findSupplierMatch(state.suppliers, meta.proveedor) : null;
+  const supplierLabel = supplierMatch ? supplierMatch.name : meta.proveedor;
+  return `
+    <div class="import-meta">
+      <div class="import-meta-info">
+        ${meta.proveedor ? `<div><span>Proveedor</span><strong>${supplierLabel}</strong>${supplierMatch ? '<small class="pos-cell"> ✓ registrado</small>' : '<small class="muted-cell"> (nuevo)</small>'}</div>` : ''}
+        ${meta.numero ? `<div><span>Documento</span><strong>${meta.numero}</strong></div>` : ''}
+        ${meta.fecha ? `<div><span>Fecha</span><strong>${meta.fecha}</strong></div>` : ''}
+        ${meta.tipoPago ? `<div><span>Pago</span><strong>${meta.tipoPago}${meta.vencimiento ? ` · vence ${meta.vencimiento}` : ''}</strong></div>` : ''}
+        ${meta.descuentoPct ? `<div><span>Descuento</span><strong>${meta.descuentoPct}% (ya aplicado a los costos)</strong></div>` : ''}
+        ${meta.totalPagar ? `<div><span>Total a pagar</span><strong>${formatUsd(meta.totalPagar)}</strong></div>` : ''}
+      </div>
+      ${
+        meta.isCredit && meta.proveedor && meta.totalPagar
+          ? importState.payableCreated
+            ? '<span class="status-pill delivered">✓ Cuenta por pagar creada</span>'
+            : `<button class="primary-button compact" data-action="import-make-payable">Crear cuenta por pagar ${formatUsd(meta.totalPagar)}</button>`
+          : ''
+      }
+    </div>
+  `;
+}
+
+// Reduce la foto (max 2000px, JPEG) para subirla rapido y controlar el costo.
+function resizeImageForAi(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxDim = 2000;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      resolve(dataUrl.split(',')[1]); // solo el base64
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('no se pudo leer la imagen'));
+    };
+    img.src = url;
+  });
+}
+
+// Lectura con IA: foto -> edge function (Claude) -> pre-factura + encabezado.
+async function runInvoiceAi(file) {
+  importState.busy = true;
+  importState.status = '🤖 La IA esta leyendo la factura (5-20 segundos)...';
+  importState.meta = null;
+  importState.payableCreated = false;
+  render();
+  try {
+    const image = await resizeImageForAi(file);
+    const { data, error } = await supabase.functions.invoke('leer-factura', {
+      body: { image, mediaType: 'image/jpeg' }
+    });
+    if (error) {
+      // El cuerpo del error de la funcion trae el mensaje util.
+      let detail = error.message || 'error desconocido';
+      try {
+        const body = await error.context?.json?.();
+        if (body?.error) detail = body.error;
+      } catch {
+        /* sin cuerpo */
+      }
+      throw new Error(detail);
+    }
+    if (!data?.invoice) throw new Error('la respuesta llego vacia');
+
+    const invoice = data.invoice;
+    const items = aiItemsToParserItems(invoice);
+    importState.meta = aiInvoiceMeta(invoice);
+    importState.rows = buildPreInvoiceRows(items, {
+      marginPct: importState.marginPct,
+      products: state.products
+    });
+    // El costo de la factura (con descuento) manda sobre el costo viejo del
+    // catalogo: es el costo real de ESTA compra.
+    importState.rows = importState.rows.map((row, i) => {
+      const invoiceCost = items[i]?.unitCostUsd ?? row.unitCostUsd;
+      const price = Number(row.priceUsd || 0);
+      return {
+        ...row,
+        unitCostUsd: invoiceCost,
+        marginPct: invoiceCost > 0 && price > 0 ? roundMoney((price / invoiceCost - 1) * 100) : row.marginPct
+      };
+    });
+    importState.status = `🤖 ${importStatusMessage()}`;
+  } catch (error) {
+    importState.status = `La IA no pudo leer la factura (${error.message}). Puedes intentar con el OCR clasico o pegar el texto.`;
+  } finally {
+    importState.busy = false;
+    render();
+  }
+}
+
+// Crea la cuenta por pagar desde el encabezado detectado (proveedor unificado).
+function createPayableFromImport() {
+  const meta = importState.meta;
+  if (!meta || !meta.proveedor || !meta.totalPagar || importState.payableCreated) return;
+  setState(() => {
+    const supplier = resolveSupplier(meta.proveedor);
+    state.payables = [
+      {
+        ...createPayable({
+          supplierName: supplier.name,
+          concept: `${meta.numero ? `Nota ${meta.numero}` : 'Factura'} (importada con IA)`,
+          totalUsd: meta.totalPagar,
+          dueDate: meta.vencimiento || defaultCreditDue(),
+          note: meta.tipoPago || ''
+        }),
+        supplierId: supplier.id
+      },
+      ...state.payables
+    ];
+  });
+  importState.payableCreated = true;
+  render();
 }
 
 function loadTesseract() {
@@ -3946,9 +4088,9 @@ function bindEvents() {
     URL.revokeObjectURL(a.href);
   });
   document.querySelector('[data-action="import-backup"]')?.addEventListener('click', () => {
-    document.querySelector('[data-import-file]')?.click();
+    document.querySelector('[data-restore-file]')?.click();
   });
-  document.querySelector('[data-import-file]')?.addEventListener('change', async (event) => {
+  document.querySelector('[data-restore-file]')?.addEventListener('change', async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
@@ -4276,6 +4418,11 @@ function bindEvents() {
     const file = event.target.files?.[0];
     if (file) runInvoiceOcr(file);
   });
+  document.querySelector('[data-import-ai-file]')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    if (file) runInvoiceAi(file);
+  });
+  document.querySelector('[data-action="import-make-payable"]')?.addEventListener('click', createPayableFromImport);
   document.querySelector('[data-action="parse-text"]')?.addEventListener('click', parseImportText);
   document.querySelector('[data-action="apply-margin-all"]')?.addEventListener('click', applyMarginToAll);
   document.querySelector('[data-action="add-row"]')?.addEventListener('click', addImportRow);
