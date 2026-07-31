@@ -1968,7 +1968,9 @@ async function runInvoiceAi(file) {
   render();
   try {
     const image = await resizeImageForAi(file);
-    const { data, error } = await supabase.functions.invoke('leer-factura', {
+    // Nombre de la funcion en Supabase (Edge Functions). Si algun dia la
+    // republicas con otro nombre, cambialo aqui.
+    const { data, error } = await supabase.functions.invoke('super-processor', {
       body: { image, mediaType: 'image/jpeg' }
     });
     if (error) {
