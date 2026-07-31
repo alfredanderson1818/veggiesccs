@@ -99,7 +99,7 @@ let importState = {
   marginPct: Number(state.settings.importMarginPct ?? 30),
   busy: false,
   meta: null, // encabezado detectado por la IA (proveedor, credito, vencimiento...)
-  payableCreated: false
+  payableId: null
 };
 let customerSearch = '';
 let accountModal = null;
@@ -1925,10 +1925,15 @@ function renderImportMeta() {
         ${meta.totalPagar ? `<div><span>Total a pagar</span><strong>${formatUsd(meta.totalPagar)}</strong></div>` : ''}
       </div>
       ${
-        meta.isCredit && meta.proveedor && meta.totalPagar
-          ? importState.payableCreated
-            ? '<span class="status-pill delivered">✓ Cuenta por pagar creada</span>'
-            : `<button class="primary-button compact" data-action="import-make-payable">Crear cuenta por pagar ${formatUsd(meta.totalPagar)}</button>`
+        meta.proveedor && meta.totalPagar
+          ? `<label class="payable-toggle ${importState.payableId ? 'on' : ''}">
+              <input type="checkbox" data-toggle-payable ${importState.payableId ? 'checked' : ''} />
+              <span class="switch"></span>
+              <span class="payable-toggle-text">
+                <strong>${importState.payableId ? '✓ Registrada en Cuentas por pagar' : 'Registrar en Cuentas por pagar'}</strong>
+                <small>${formatUsd(meta.totalPagar)} a ${meta.proveedor}${meta.isCredit ? ` · vence ${meta.vencimiento || defaultCreditDue()}` : ' · contado'}</small>
+              </span>
+            </label>`
           : ''
       }
     </div>
@@ -1964,7 +1969,7 @@ async function runInvoiceAi(file) {
   importState.busy = true;
   importState.status = '🤖 La IA esta leyendo la factura (5-20 segundos)...';
   importState.meta = null;
-  importState.payableCreated = false;
+  importState.payableId = null;
   render();
   try {
     const image = await resizeImageForAi(file);
@@ -2013,28 +2018,44 @@ async function runInvoiceAi(file) {
   }
 }
 
-// Crea la cuenta por pagar desde el encabezado detectado (proveedor unificado).
-function createPayableFromImport() {
+// Interruptor: registra (o quita) la cuenta por pagar de esta factura.
+// Funciona con facturas de contado y de credito — tu decides si la registras.
+function togglePayableFromImport() {
   const meta = importState.meta;
-  if (!meta || !meta.proveedor || !meta.totalPagar || importState.payableCreated) return;
+  if (!meta || !meta.proveedor || !meta.totalPagar) return;
+
+  // Ya registrada: la quitamos (salvo que ya tenga pagos).
+  if (importState.payableId) {
+    const existing = state.payables.find((p) => p.id === importState.payableId);
+    if (existing && (existing.payments || []).length) {
+      window.alert('Esta cuenta por pagar ya tiene pagos registrados. Quitala desde Finanzas si de verdad quieres eliminarla.');
+      render();
+      return;
+    }
+    const id = importState.payableId;
+    importState.payableId = null;
+    setState(() => {
+      state.payables = state.payables.filter((p) => p.id !== id);
+    });
+    return;
+  }
+
+  // No registrada: la creamos.
+  const payable = {
+    ...createPayable({
+      supplierName: meta.proveedor,
+      concept: `${meta.numero ? `Nota ${meta.numero}` : 'Factura'} (importada con IA)`,
+      totalUsd: meta.totalPagar,
+      // Credito: su vencimiento real. Contado: la fecha de la factura.
+      dueDate: meta.isCredit ? meta.vencimiento || defaultCreditDue() : meta.fecha || todayIso(),
+      note: meta.tipoPago || ''
+    })
+  };
+  importState.payableId = payable.id;
   setState(() => {
     const supplier = resolveSupplier(meta.proveedor);
-    state.payables = [
-      {
-        ...createPayable({
-          supplierName: supplier.name,
-          concept: `${meta.numero ? `Nota ${meta.numero}` : 'Factura'} (importada con IA)`,
-          totalUsd: meta.totalPagar,
-          dueDate: meta.vencimiento || defaultCreditDue(),
-          note: meta.tipoPago || ''
-        }),
-        supplierId: supplier.id
-      },
-      ...state.payables
-    ];
+    state.payables = [{ ...payable, supplierName: supplier.name, supplierId: supplier.id }, ...state.payables];
   });
-  importState.payableCreated = true;
-  render();
 }
 
 function loadTesseract() {
@@ -4424,7 +4445,7 @@ function bindEvents() {
     const file = event.target.files?.[0];
     if (file) runInvoiceAi(file);
   });
-  document.querySelector('[data-action="import-make-payable"]')?.addEventListener('click', createPayableFromImport);
+  document.querySelector('[data-toggle-payable]')?.addEventListener('change', togglePayableFromImport);
   document.querySelector('[data-action="parse-text"]')?.addEventListener('click', parseImportText);
   document.querySelector('[data-action="apply-margin-all"]')?.addEventListener('click', applyMarginToAll);
   document.querySelector('[data-action="add-row"]')?.addEventListener('click', addImportRow);
