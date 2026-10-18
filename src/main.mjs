@@ -232,7 +232,7 @@ async function initCloudSync() {
     const { data } = await supabase.auth.getSession();
     if (!data?.session) {
       cloudReady = true;
-      setCloudStatus('local', 'Inicia sesion para sincronizar con la base de datos.');
+      setCloudStatus('local', 'Inicia sesión para sincronizar con la base de datos.');
       return;
     }
     const remote = await pullRemoteState();
@@ -271,7 +271,7 @@ async function initCloudSync() {
       // Caso raro: el usuario alcanzo a editar mientras la app abria Y la nube
       // tiene una version mas nueva. Nunca se pisa nada en silencio: se pregunta.
       const pushLocal = window.confirm(
-        'Hiciste cambios en este equipo mientras la app abria, pero la nube tiene una version mas nueva (de otro equipo).\n\n' +
+        'Hiciste cambios en este equipo mientras la app abria, pero la nube tiene una versión más nueva (de otro equipo).\n\n' +
           '• Aceptar: SUBIR lo de este equipo (la nube se reemplaza).\n' +
           '• Cancelar: usar la NUBE (se pierden los cambios de hace un momento).'
       );
@@ -414,13 +414,30 @@ function restoreFocus(snapshot) {
   }
 }
 
+// Iconos de linea (trazo, no relleno) dibujados con currentColor: heredan el
+// color del elemento, asi que el estado activo/hover se resuelve solo en CSS.
+// Antes esto eran emoji, que cambian de forma y color en cada sistema.
+const ICON_PATHS = {
+  home: '<path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-7h6v7"/>',
+  cart: '<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3h2.2l2.5 11.4a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.25L21 7H6"/>',
+  leaf: '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z"/><path d="M2 21c0-3 1.9-5.4 5.1-6C9.5 14.5 12 13 13 12"/>',
+  users: '<path d="M16 21v-1.8a4 4 0 0 0-4-4H6.5a4 4 0 0 0-4 4V21"/><circle cx="9.2" cy="7.5" r="3.6"/><path d="M21.5 21v-1.8a4 4 0 0 0-3-3.85"/><path d="M16.5 3.9a4 4 0 0 1 0 7.4"/>',
+  wallet: '<path d="M20.5 12.5V7.5H5.2a2.2 2.2 0 0 1 0-4.4h14.1v4.4"/><path d="M3 5.3v13.4a2.2 2.2 0 0 0 2.2 2.2h15.3v-4.6"/><path d="M17.8 12.5a2.1 2.1 0 0 0 0 4.2h3.7v-4.2z"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.1 14.4a1.5 1.5 0 0 0 .3 1.65l.05.05a1.8 1.8 0 1 1-2.55 2.55l-.05-.05a1.5 1.5 0 0 0-1.65-.3 1.5 1.5 0 0 0-.9 1.37V20a1.8 1.8 0 0 1-3.6 0v-.1a1.5 1.5 0 0 0-.98-1.37 1.5 1.5 0 0 0-1.65.3l-.05.05A1.8 1.8 0 1 1 5.47 16.3l.05-.05a1.5 1.5 0 0 0 .3-1.65 1.5 1.5 0 0 0-1.37-.9H4a1.8 1.8 0 0 1 0-3.6h.1a1.5 1.5 0 0 0 1.37-.98 1.5 1.5 0 0 0-.3-1.65l-.05-.05A1.8 1.8 0 1 1 7.67 4.87l.05.05a1.5 1.5 0 0 0 1.65.3h.07a1.5 1.5 0 0 0 .9-1.37V3.8a1.8 1.8 0 0 1 3.6 0v.1a1.5 1.5 0 0 0 .9 1.37 1.5 1.5 0 0 0 1.65-.3l.05-.05a1.8 1.8 0 1 1 2.55 2.55l-.05.05a1.5 1.5 0 0 0-.3 1.65v.07a1.5 1.5 0 0 0 1.37.9h.11a1.8 1.8 0 0 1 0 3.6H20a1.5 1.5 0 0 0-1.37.9z"/>',
+  chevron: '<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>'
+};
+
+function icon(name) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICON_PATHS[name] || ''}</svg>`;
+}
+
 const SECTIONS = [
-  { key: 'inicio', label: 'Inicio', ic: '🏠', views: [['dashboard', 'Resumen']] },
-  { key: 'ventas', label: 'Ventas', ic: '🛒', views: [['pos', 'Punto de venta'], ['weborders', 'Pedidos web'], ['import', 'Importar factura'], ['galpon', 'Galpon'], ['documents', 'Documentos']] },
-  { key: 'catalogo', label: 'Catalogo', ic: '🥬', views: [['catalog', 'Productos'], ['inventory', 'Inventario']] },
-  { key: 'clientes', label: 'Clientes', ic: '👥', views: [['customers', 'Cartera'], ['messaging', 'Mensajeria']] },
-  { key: 'finanzas', label: 'Finanzas', ic: '💵', views: [['accounts', 'Cuentas y caja'], ['receivables', 'Cuentas por cobrar'], ['payables', 'Cuentas por pagar'], ['reports', 'Reportes'], ['rates', 'Tasa BCV']] },
-  { key: 'config', label: 'Configuracion', ic: '⚙️', views: [['settings', 'Configuracion']] }
+  { key: 'inicio', label: 'Inicio', ic: 'home', views: [['dashboard', 'Resumen']] },
+  { key: 'ventas', label: 'Ventas', ic: 'cart', views: [['pos', 'Punto de venta'], ['weborders', 'Pedidos web'], ['import', 'Importar factura'], ['galpon', 'Galpón'], ['documents', 'Documentos']] },
+  { key: 'catalogo', label: 'Catálogo', ic: 'leaf', views: [['catalog', 'Productos'], ['inventory', 'Inventario']] },
+  { key: 'clientes', label: 'Clientes', ic: 'users', views: [['customers', 'Cartera'], ['messaging', 'Mensajería']] },
+  { key: 'finanzas', label: 'Finanzas', ic: 'wallet', views: [['accounts', 'Cuentas y caja'], ['receivables', 'Cuentas por cobrar'], ['payables', 'Cuentas por pagar'], ['reports', 'Reportes'], ['rates', 'Tasa BCV']] },
+  { key: 'config', label: 'Configuración', ic: 'gear', views: [['settings', 'Configuración']] }
 ];
 const HIDDEN_VIEW_SECTION = { checkout: 'ventas' };
 
@@ -443,7 +460,7 @@ function renderSidebarNav() {
   return SECTIONS.map(
     (sec) => `
       <button class="nav-section ${sec.key === activeKey ? 'active' : ''}" data-section="${sec.key}">
-        <span class="nav-ic">${sec.ic}</span><span class="nav-label">${sec.label}</span>
+        <span class="nav-ic">${icon(sec.ic)}</span><span class="nav-label">${sec.label}</span>
       </button>`
   ).join('');
 }
@@ -471,7 +488,7 @@ function render() {
         <div class="sidebar-footer">
           ${syncChipHtml()}
           <button class="ghost-button" data-action="reset-storage">Restablecer este equipo</button>
-          <button class="ghost-button" data-action="logout">Cerrar sesion</button>
+          <button class="ghost-button" data-action="logout">Cerrar sesión</button>
           <small>Registrado como:<br><strong>${state.settings.userName}</strong></small>
         </div>
       </aside>
@@ -523,16 +540,16 @@ function navButton(view, label, sublabel) {
 function renderDashboard(metrics) {
   return `
     <section class="dashboard-grid">
-      ${metricCard('Facturacion', formatUsd(metrics.sales), 'Ventas cerradas', 'solid')}
+      ${metricCard('Facturación', formatUsd(metrics.sales), 'Ventas cerradas', 'solid')}
       ${metricCard('Ticket promedio', formatUsd(metrics.average), 'Por pedido', '')}
-      ${metricCard('Ordenes', metrics.count, 'Finalizadas', '')}
+      ${metricCard('Órdenes', metrics.count, 'Finalizadas', '')}
       ${metricCard('Margen estimado', formatUsd(metrics.margin), 'Antes de costos reales', 'solid')}
     </section>
   `;
 }
 
 function renderVBars(items, { label, value, fmt }) {
-  if (!items.length) return '<div class="chart-empty">Sin datos todavia</div>';
+  if (!items.length) return '<div class="chart-empty">Sin datos todavía</div>';
   const max = Math.max(...items.map((i) => Number(i[value]) || 0), 1);
   return `<div class="chart-bars">${items
     .map(
@@ -547,7 +564,7 @@ function renderVBars(items, { label, value, fmt }) {
 }
 
 function renderHBars(items, { label, value, fmt }) {
-  if (!items.length) return '<div class="chart-empty">Sin datos todavia</div>';
+  if (!items.length) return '<div class="chart-empty">Sin datos todavía</div>';
   const max = Math.max(...items.map((i) => Number(i[value]) || 0), 1);
   return `<div class="hbars">${items
     .map(
@@ -575,15 +592,15 @@ function renderHome() {
   return `
     <section class="home-view">
       <div class="dashboard-grid secondary">
-        ${metricCard('Por cobrar', usd(recv.balanceUsd), `${recv.openCount} creditos abiertos`, '')}
+        ${metricCard('Por cobrar', usd(recv.balanceUsd), `${recv.openCount} créditos abiertos`, '')}
         ${metricCard('Valor inventario', usd(inv.valueUsd), `${inv.productCount} productos`, '')}
         ${metricCard('Clientes', state.customers.length, `${state.customers.filter((c) => (c.status || '').toLowerCase() === 'activo').length} activos`, '')}
-        ${metricCard('Alertas stock', lowCount, 'En o bajo el minimo', lowCount ? 'solid' : '')}
+        ${metricCard('Alertas stock', lowCount, 'En o bajo el mínimo', lowCount ? 'solid' : '')}
       </div>
 
       <div class="home-grid">
         <article class="chart-card wide">
-          <h3>Ventas por dia</h3>
+          <h3>Ventas por día</h3>
           ${renderVBars(byDay, { label: 'dayLabel', value: 'salesUsd', fmt: usd })}
         </article>
         <article class="chart-card">
@@ -596,11 +613,11 @@ function renderHome() {
           </div>
         </article>
         <article class="chart-card">
-          <h3>Productos mas vendidos</h3>
+          <h3>Productos más vendidos</h3>
           ${renderHBars(top, { label: 'name', value: 'quantity', fmt: (v) => `${v}` })}
         </article>
         <article class="chart-card">
-          <h3>Ventas por metodo de pago</h3>
+          <h3>Ventas por método de pago</h3>
           ${renderHBars(byMethod, { label: 'method', value: 'salesUsd', fmt: usd })}
         </article>
       </div>
@@ -615,7 +632,7 @@ function renderHome() {
                   (o) => `<div class="movement-row"><span>#${o.orderNumber} · ${o.date} · ${(o.customerName || '').trim() || 'Mostrador'} · ${o.payment?.methodName || ''}${o.status === 'annulled' ? ' · ANULADO' : ''}</span><strong>${formatUsd(o.totals?.totalUsd || 0)}</strong></div>`
                 )
                 .join('')}</div>`
-            : '<div class="chart-empty">Aun no hay pedidos. Haz tu primera venta en Pedidos.</div>'
+            : '<div class="chart-empty">Aún no hay pedidos. Haz tu primera venta en Pedidos.</div>'
         }
       </article>
     </section>
@@ -654,10 +671,10 @@ function renderPos(totals) {
               ${option('Delivery', currentOrder.channel)}
             </select>
           </label>
-          <label>Ubicacion
+          <label>Ubicación
             <select data-field="location">
               ${option('Todas', currentOrder.location)}
-              ${option('Galpon', currentOrder.location)}
+              ${option2('Galpon', 'Galpón', currentOrder.location)}
               ${option('Caracas', currentOrder.location)}
             </select>
           </label>
@@ -668,11 +685,11 @@ function renderPos(totals) {
           <button class="toggle-button" data-action="toggle-currency">${state.settings.currencyView}</button>
         </div>
         <div class="search-row">
-          <input type="search" placeholder="Buscar productos, codigo o categoria..." value="${search}" data-field="search" />
+          <input type="search" placeholder="Buscar productos, código o categoría..." value="${search}" data-field="search" />
           <button class="scan-button" data-action="scan">Escanear</button>
         </div>
         <div class="section-heading">
-          <h2>Catalogo operativo</h2>
+          <h2>Catálogo operativo</h2>
           <p>Vende desde catalogo. Solo inventariable descuenta stock.</p>
         </div>
         <div class="product-grid">
@@ -728,7 +745,7 @@ function renderCustomerField() {
       </div>`;
   }
   const placeholder =
-    paymentMode === 'credito' ? 'Buscar cliente (obligatorio para credito)' : 'Buscar cliente (opcional)';
+    paymentMode === 'credito' ? 'Buscar cliente (obligatorio para crédito)' : 'Buscar cliente (opcional)';
   return `
     <div class="customer-field">
       <input class="client-input" placeholder="${placeholder}" value="${customerQuery}" data-field="order-customer" autocomplete="off" />
@@ -766,7 +783,7 @@ function renderOrderPanel(totals) {
         ${finalizeLabel(totals)}
       </button>
       <button class="expand-button" data-view="checkout" ${currentOrder.items.length ? '' : 'disabled'}>Ver pedido en pantalla completa</button>
-      <button class="quote-button" data-action="download-quote" ${currentOrder.items.length ? '' : 'disabled'}>Descargar cotizacion</button>
+      <button class="quote-button" data-action="download-quote" ${currentOrder.items.length ? '' : 'disabled'}>Descargar cotización</button>
     </aside>
   `;
 }
@@ -799,7 +816,7 @@ function renderCheckout(totals) {
               </tbody>
             </table>
           </div>
-          <button class="add-row-button" data-view="pos">+ Agregar mas productos</button>
+          <button class="add-row-button" data-view="pos">+ Agregar más productos</button>
         </div>
 
         <aside class="checkout-summary">
@@ -816,7 +833,7 @@ function renderCheckout(totals) {
           <button class="finish-button" data-action="finalize" ${canFinalize ? '' : 'disabled'}>
             ${finalizeLabel(totals)}
           </button>
-          <button class="quote-button" data-action="download-quote" ${currentOrder.items.length ? '' : 'disabled'}>Descargar cotizacion</button>
+          <button class="quote-button" data-action="download-quote" ${currentOrder.items.length ? '' : 'disabled'}>Descargar cotización</button>
         </aside>
       </div>
     </section>
@@ -932,7 +949,7 @@ function canFinalizeOrder(totals) {
   return true;
 }
 function finalizeLabel(totals) {
-  if (paymentMode === 'credito') return `Registrar credito ${formatUsd(totals.totalUsd)}`;
+  if (paymentMode === 'credito') return `Registrar crédito ${formatUsd(totals.totalUsd)}`;
   if (paymentMode === 'mixto') return `Finalizar mixto ${formatUsd(totals.totalUsd)}`;
   return `Finalizar pedido ${formatUsd(totals.totalUsd)}`;
 }
@@ -940,7 +957,7 @@ function renderPayModeTabs() {
   const modes = [
     ['contado', 'Pago de una'],
     ['mixto', 'Mixto'],
-    ['credito', 'Credito']
+    ['credito', 'Crédito']
   ];
   return `<div class="pay-mode">${modes
     .map(
@@ -986,7 +1003,7 @@ function renderPaymentBody(totals) {
       <div class="credit-note">${
         currentOrder.customerId
           ? `Se registrara como cuenta por cobrar de <strong>${currentOrder.customerName}</strong>.`
-          : 'Selecciona un cliente del sistema para dar credito.'
+          : 'Selecciona un cliente del sistema para dar crédito.'
       }</div>
       <label class="credit-due">Fecha limite de pago
         <input type="date" value="${creditDueDate}" data-credit-due />
@@ -1011,8 +1028,8 @@ function renderSettings() {
   return `
     <section class="customers-panel settings-panel">
       <div class="section-heading">
-        <h2>Configuracion</h2>
-        <p>Los cambios se guardan automaticamente al salir de cada campo.</p>
+        <h2>Configuración</h2>
+        <p>Los cambios se guardan automáticamente al salir de cada campo.</p>
       </div>
 
       <div class="settings-grid">
@@ -1025,10 +1042,10 @@ function renderSettings() {
           <label>RIF
             <input type="text" data-set-field="businessRif" value="${s.businessRif || ''}" placeholder="J-12345678-9" />
           </label>
-          <label>Telefono
+          <label>Teléfono
             <input type="text" data-set-field="businessPhone" value="${s.businessPhone || ''}" placeholder="0424..." />
           </label>
-          <label>Direccion
+          <label>Dirección
             <input type="text" data-set-field="businessAddress" value="${s.businessAddress || ''}" placeholder="Caracas · Venezuela" />
           </label>
         </div>
@@ -1044,23 +1061,23 @@ function renderSettings() {
               <option value="Principal" ${s.channel === 'Principal' ? 'selected' : ''}>Detal (Principal)</option>
             </select>
           </label>
-          <label>Dias de credito por defecto
+          <label>Días de crédito por defecto
             <input type="number" min="0" step="1" data-set-field="creditDays" value="${s.creditDays ?? 7}" />
           </label>
-          <label>Margen de importacion por defecto (%)
+          <label>Margen de importación por defecto (%)
             <input type="number" min="0" step="1" data-set-field="importMarginPct" value="${s.importMarginPct ?? 30}" />
           </label>
         </div>
 
         <div class="settings-card">
-          <h3>Redondeo de bolivares</h3>
-          <p class="muted-cell">Como se redondea el total en Bs al cobrar. Paso 0 = sin redondeo.</p>
+          <h3>Redondeo de bolívares</h3>
+          <p class="muted-cell">Cómo se redondea el total en Bs al cobrar. Paso 0 = sin redondeo.</p>
           <label>Paso de redondeo (Bs)
             <input type="number" min="0" step="1" data-set-field="bsStep" value="${s.bsRounding?.step ?? 0}" />
           </label>
           <label>Modo
             <select data-set-field="bsMode">
-              <option value="nearest" ${(s.bsRounding?.mode || 'nearest') === 'nearest' ? 'selected' : ''}>Al mas cercano</option>
+              <option value="nearest" ${(s.bsRounding?.mode || 'nearest') === 'nearest' ? 'selected' : ''}>Al más cercano</option>
               <option value="up" ${s.bsRounding?.mode === 'up' ? 'selected' : ''}>Siempre arriba</option>
               <option value="down" ${s.bsRounding?.mode === 'down' ? 'selected' : ''}>Siempre abajo</option>
             </select>
@@ -1073,7 +1090,7 @@ function renderSettings() {
             <div><span>Estado</span><strong>${
               { starting: 'Conectando...', ok: '✓ Sincronizada', local: 'Solo en este equipo', error: '⚠ Con error' }[cloudStatus.state] || cloudStatus.state
             }</strong></div>
-            <div><span>Ultima sincronizacion</span><strong>${lastSync ? new Date(lastSync).toLocaleString('es-VE') : 'Nunca en este equipo'}</strong></div>
+            <div><span>Última sincronización</span><strong>${lastSync ? new Date(lastSync).toLocaleString('es-VE') : 'Nunca en este equipo'}</strong></div>
             <div><span>Productos</span><strong>${state.products.length}</strong></div>
             <div><span>Clientes</span><strong>${state.customers.length}</strong></div>
             <div><span>Ventas registradas</span><strong>${state.orders.length}</strong></div>
@@ -1084,7 +1101,7 @@ function renderSettings() {
             <button class="ghost-button compact" data-action="import-backup">⬆ Restaurar respaldo</button>
             <input type="file" accept="application/json,.json" data-restore-file style="display:none" />
           </div>
-          <p class="muted-cell" style="text-align:left">Los datos se guardan en Supabase y se comparten entre todos los equipos donde inicies sesion. Descarga un respaldo cuando quieras: es un archivo con TODO el sistema, restaurable con un click.</p>
+          <p class="muted-cell" style="text-align:left">Los datos se guardan en Supabase y se comparten entre todos los equipos donde inicies sesión. Descarga un respaldo cuando quieras: es un archivo con TODO el sistema, restaurable con un click.</p>
         </div>
       </div>
     </section>
@@ -1099,16 +1116,16 @@ function renderCatalog() {
   return `
     <section class="catalog-panel">
       <div class="section-heading">
-        <h2>Catalogo flexible</h2>
+        <h2>Catálogo flexible</h2>
         <button class="primary-button compact" data-action="new-product">+ Nuevo producto</button>
       </div>
-      <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">El modo define si afecta inventario, crea orden al galpon o se vende como servicio. Haz clic en Editar para cambiar precios, costo, stock o codigo.</p>
+      <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">El modo define si afecta inventario, crea orden al galpón o se vende como servicio. Haz clic en Editar para cambiar precios, costo, stock o código.</p>
       <div class="search-row">
-        <input type="search" placeholder="Buscar producto, codigo o categoria..." value="${search}" data-field="search" />
+        <input type="search" placeholder="Buscar producto, código o categoría..." value="${search}" data-field="search" />
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Codigo</th><th>Producto</th><th>Modo</th><th>Detal</th><th>Mayor</th><th>Costo</th><th>Stock</th><th></th></tr></thead>
+          <thead><tr><th>Código</th><th>Producto</th><th>Modo</th><th class="num">Detal</th><th class="num">Mayor</th><th class="num">Costo</th><th class="num">Stock</th><th></th></tr></thead>
           <tbody>
             ${
               rows.length
@@ -1119,10 +1136,10 @@ function renderCatalog() {
                     <td>${product.sku}</td>
                     <td><strong>${product.name}</strong>${product.supplierName ? `<br/><small class="muted-cell">${product.supplierName}</small>` : ''}</td>
                     <td><span class="mode-pill">${controlModeLabel(product.controlMode)}</span></td>
-                    <td>${formatUsd(product.prices?.Principal ?? product.priceUsd)}</td>
-                    <td>${formatUsd(product.prices?.Mayor ?? product.priceUsd)}</td>
-                    <td>${formatUsd(product.estimatedCostUsd)}</td>
-                    <td>${product.stock ?? 'No aplica'} ${product.stock === null ? '' : product.unit}</td>
+                    <td class="num">${formatUsd(product.prices?.Principal ?? product.priceUsd)}</td>
+                    <td class="num">${formatUsd(product.prices?.Mayor ?? product.priceUsd)}</td>
+                    <td class="num">${formatUsd(product.estimatedCostUsd)}</td>
+                    <td class="num">${product.stock ?? 'No aplica'} ${product.stock === null ? '' : product.unit}</td>
                     <td><button class="ghost-button compact" data-edit-product="${product.id}">Editar</button></td>
                   </tr>
                 `
@@ -1154,7 +1171,7 @@ function renderInventory() {
       <div class="dashboard-grid">
         ${metricCard('Productos inventario', summary.productCount, 'Con control de stock', '')}
         ${metricCard('Valor inventario', formatUsd(summary.valueUsd), 'A costo estimado', 'solid')}
-        ${metricCard('Alertas stock bajo', summary.lowStockCount, 'En o bajo el minimo', summary.lowStockCount ? 'solid' : '')}
+        ${metricCard('Alertas stock bajo', summary.lowStockCount, 'En o bajo el mínimo', summary.lowStockCount ? 'solid' : '')}
       </div>
 
       ${
@@ -1259,12 +1276,19 @@ function invMovementLabel(type) {
   return { purchase: 'Compra', sale: 'Venta', adjustment: 'Ajuste' }[type] || type;
 }
 
+// Una columna se alinea a la derecha si lleva dinero o si cuenta unidades.
+// El texto queda a la izquierda; las cifras, en columna.
+const NUMERIC_KEYS = new Set(['count', 'quantity', 'orders', 'stock', 'qty']);
+function isNumericColumn(column) {
+  return Boolean(column.money) || NUMERIC_KEYS.has(column.key);
+}
+
 function reportDefinitions() {
   const orders = state.orders;
   return [
     {
       id: 'ventas-dia',
-      title: 'Ventas por dia',
+      title: 'Ventas por día',
       columns: [
         { key: 'date', label: 'Fecha' },
         { key: 'count', label: 'Pedidos' },
@@ -1296,9 +1320,9 @@ function reportDefinitions() {
     },
     {
       id: 'ventas-metodo',
-      title: 'Ventas por metodo de pago',
+      title: 'Ventas por método de pago',
       columns: [
-        { key: 'method', label: 'Metodo' },
+        { key: 'method', label: 'Método' },
         { key: 'count', label: 'Pedidos' },
         { key: 'salesUsd', label: 'Ventas USD', money: true }
       ],
@@ -1306,9 +1330,9 @@ function reportDefinitions() {
     },
     {
       id: 'top-productos',
-      title: 'Productos mas vendidos',
+      title: 'Productos más vendidos',
       columns: [
-        { key: 'sku', label: 'Codigo' },
+        { key: 'sku', label: 'Código' },
         { key: 'name', label: 'Producto' },
         { key: 'quantity', label: 'Cantidad' },
         { key: 'salesUsd', label: 'Ventas USD', money: true },
@@ -1320,7 +1344,7 @@ function reportDefinitions() {
       id: 'mejor-margen',
       title: 'Productos con mejor margen',
       columns: [
-        { key: 'sku', label: 'Codigo' },
+        { key: 'sku', label: 'Código' },
         { key: 'name', label: 'Producto' },
         { key: 'marginUsd', label: 'Margen USD', money: true },
         { key: 'salesUsd', label: 'Ventas USD', money: true }
@@ -1352,7 +1376,7 @@ function renderReports() {
       <div class="dashboard-grid">
         ${metricCard('Ventas totales', formatUsd(summary.salesUsd), `${summary.orderCount} pedidos`, 'solid')}
         ${metricCard('Utilidad estimada', formatUsd(summary.estimatedProfitUsd), 'Con costo estimado', '')}
-        ${metricCard('Utilidad real', formatUsd(summary.realProfitUsd), 'Con costo real galpon', 'solid')}
+        ${metricCard('Utilidad real', formatUsd(summary.realProfitUsd), 'Con costo real galpón', 'solid')}
         ${metricCard('Costo real', formatUsd(summary.realCostUsd), 'Mercancia vendida', '')}
       </div>
       <div class="reports-grid">
@@ -1371,7 +1395,7 @@ function renderReportTable(def) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr>${def.columns.map((c) => `<th>${c.label}</th>`).join('')}</tr></thead>
+          <thead><tr>${def.columns.map((c) => `<th${isNumericColumn(c) ? ' class="num"' : ''}>${c.label}</th>`).join('')}</tr></thead>
           <tbody>
             ${
               def.rows.length
@@ -1379,11 +1403,11 @@ function renderReportTable(def) {
                     .map(
                       (row) =>
                         `<tr>${def.columns
-                          .map((c) => `<td>${c.money ? formatUsd(row[c.key]) : row[c.key]}</td>`)
+                          .map((c) => `<td${isNumericColumn(c) ? ' class="num"' : ''}>${c.money ? formatUsd(row[c.key]) : row[c.key]}</td>`)
                           .join('')}</tr>`
                     )
                     .join('')
-                : `<tr><td colspan="${def.columns.length}" class="muted-cell">Sin ventas registradas todavia</td></tr>`
+                : `<tr><td colspan="${def.columns.length}" class="muted-cell">Sin ventas registradas todavía</td></tr>`
             }
           </tbody>
         </table>
@@ -1425,7 +1449,7 @@ function printReport() {
       (def) => `
         <h2>${def.title}</h2>
         <table>
-          <thead><tr>${def.columns.map((c) => `<th>${c.label}</th>`).join('')}</tr></thead>
+          <thead><tr>${def.columns.map((c) => `<th${isNumericColumn(c) ? ' class="num"' : ''}>${c.label}</th>`).join('')}</tr></thead>
           <tbody>
             ${
               def.rows.length
@@ -1433,7 +1457,7 @@ function printReport() {
                     .map(
                       (row) =>
                         `<tr>${def.columns
-                          .map((c) => `<td>${c.money ? formatUsd(row[c.key]) : row[c.key]}</td>`)
+                          .map((c) => `<td${isNumericColumn(c) ? ' class="num"' : ''}>${c.money ? formatUsd(row[c.key]) : row[c.key]}</td>`)
                           .join('')}</tr>`
                     )
                     .join('')
@@ -1484,7 +1508,7 @@ function renderDocuments() {
     <section class="documents-panel">
       <div class="section-heading">
         <h2>Documentos</h2>
-        <p>Genera cotizaciones, notas de entrega, facturas y recibos con numeracion correlativa.</p>
+        <p>Genera cotizaciones, notas de entrega, facturas y recibos con numeración correlativa.</p>
       </div>
       <div class="docs-order-list">
         ${
@@ -1530,11 +1554,11 @@ function renderDocumentOrderRow(order) {
         </div>
       </div>
       <div class="docs-actions">
-        <button class="ghost-button compact" data-doc="cotizacion|${order.id}">Cotizacion</button>
+        <button class="ghost-button compact" data-doc="cotizacion|${order.id}">Cotización</button>
         <button class="ghost-button compact" data-doc="nota_entrega|${order.id}">Nota entrega</button>
         <button class="ghost-button compact" data-doc="factura|${order.id}">Factura</button>
         <button class="ghost-button compact" data-doc="recibo|${order.id}">Recibo</button>
-        <button class="ghost-button compact" data-thermal="${order.id}">Termico</button>
+        <button class="ghost-button compact" data-thermal="${order.id}">Térmico</button>
         <button class="wa-button compact" data-wa="${order.id}">WhatsApp</button>
         ${annulled ? '' : `<button class="coral-button compact" data-annul="${order.id}">Anular</button>`}
       </div>
@@ -1601,7 +1625,7 @@ function documentHtml(doc) {
 
   const footer =
     doc.type === 'cotizacion'
-      ? 'Cotizacion valida por 24 horas, sujeta a disponibilidad y a la tasa del dia.'
+      ? 'Cotización válida por 24 horas, sujeta a disponibilidad y a la tasa del día.'
       : doc.type === 'nota_entrega'
       ? 'Recibi conforme la mercancia descrita. Firma: ____________________'
       : 'Documento interno generado por Veggies CCS.';
@@ -1644,7 +1668,7 @@ function documentHtml(doc) {
       <div style="text-align:right"><strong>Cliente</strong>${doc.customerName}</div>
     </div>
     <table>
-      <thead><tr><th>Codigo</th><th>Producto</th><th class="num">Cantidad</th><th class="num">Precio</th><th class="num">Total</th></tr></thead>
+      <thead><tr><th>Código</th><th>Producto</th><th class="num">Cantidad</th><th class="num">Precio</th><th class="num">Total</th></tr></thead>
       <tbody>${itemsHtml}</tbody>
     </table>
     <table class="totals"><tbody>${totalsRows}</tbody></table>
@@ -1852,7 +1876,7 @@ function renderImport() {
         <div class="table-wrap">
           <table class="preinvoice-table">
             <thead><tr>
-              <th>Descripcion</th><th>Und</th><th>Cant</th><th>Costo $</th><th>Margen %</th><th>Precio venta $</th><th>Total venta</th><th></th>
+              <th>Descripción</th><th>Und</th><th>Cant</th><th>Costo $</th><th>Margen %</th><th>Precio venta $</th><th>Total venta</th><th></th>
             </tr></thead>
             <tbody>
               ${rows.map(renderPreInvoiceRow).join('')}
@@ -2377,8 +2401,8 @@ function renderMessaging() {
   return `
     <section class="customers-panel">
       <div class="section-heading">
-        <h2>Mensajeria</h2>
-        <p>Avisos por WhatsApp con tu numero: el mensaje sale listo, tu solo das enviar.</p>
+        <h2>Mensajería</h2>
+        <p>Avisos por WhatsApp con tu número: el mensaje sale listo, tú solo das enviar.</p>
       </div>
       <div class="msg-segments">
         ${MESSAGING_SEGMENTS.map(
@@ -2397,11 +2421,11 @@ function renderMessaging() {
       <div class="msg-counter">
         <strong>${rows.length}</strong> cliente${rows.length === 1 ? '' : 's'} en la lista
         · <span class="${sentToday ? 'pos-cell' : ''}">${sentToday} avisado${sentToday === 1 ? '' : 's'} hoy</span>
-        ${sinTelefono ? `· <span class="muted-cell">${sinTelefono} sin telefono valido (no salen en la lista)</span>` : ''}
+        ${sinTelefono ? `· <span class="muted-cell">${sinTelefono} sin teléfono válido (no salen en la lista)</span>` : ''}
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Cliente</th><th>Telefono</th><th>Detalle</th><th>Ultimo aviso</th><th></th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Teléfono</th><th>Detalle</th><th>Último aviso</th><th></th></tr></thead>
           <tbody>
             ${
               rows.length
@@ -2479,8 +2503,8 @@ function renderCustomers() {
       <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">Cartera de clientes con historial de compras. Haz clic en Editar para actualizar datos.</p>
       <div class="dashboard-grid">
         ${metricCard('Clientes', all.length, `${active} activos`, 'solid')}
-        ${metricCard('Total gastado', formatUsd(totalSpent), 'Historico', '')}
-        ${metricCard('Ordenes totales', totalOrders, 'Acumuladas', '')}
+        ${metricCard('Total gastado', formatUsd(totalSpent), 'Histórico', '')}
+        ${metricCard('Órdenes totales', totalOrders, 'Acumuladas', '')}
         ${metricCard('Ticket promedio', formatUsd(avgTicket), 'Por orden', 'solid')}
       </div>
       <div class="search-row">
@@ -2489,8 +2513,8 @@ function renderCustomers() {
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Cliente</th><th>Cedula/RIF</th><th>Telefono</th><th>Producto top</th>
-            <th>Ordenes</th><th>Total gastado</th><th>Ticket prom.</th><th>Estatus</th><th></th>
+            <th>Cliente</th><th>Cédula/RIF</th><th>Teléfono</th><th>Producto top</th>
+            <th class="num">Órdenes</th><th class="num">Total gastado</th><th class="num">Ticket prom.</th><th>Estatus</th><th></th>
           </tr></thead>
           <tbody>
             ${
@@ -2504,9 +2528,9 @@ function renderCustomers() {
                           <td>${c.idDoc || ''}</td>
                           <td>${c.phone || ''}</td>
                           <td>${c.topProduct || ''}</td>
-                          <td>${c.totalOrders}</td>
-                          <td>${formatUsd(c.totalSpent)}</td>
-                          <td>${formatUsd(c.avgTicket)}</td>
+                          <td class="num">${c.totalOrders}</td>
+                          <td class="num">${formatUsd(c.totalSpent)}</td>
+                          <td class="num">${formatUsd(c.avgTicket)}</td>
                           <td><span class="status-pill ${(c.status || '').toLowerCase() === 'activo' ? 'delivered' : 'annulled'}">${c.status}</span></td>
                           <td><button class="ghost-button compact" data-edit-customer="${c.id}">Editar</button></td>
                         </tr>`
@@ -2717,12 +2741,12 @@ function renderGroupBlock(g, { kind, label, tableHtml }) {
   return `
     <div class="group-block ${g.hasOverdue ? 'has-overdue' : ''} ${open ? 'open' : ''}">
       <button type="button" class="group-head" data-debt-group="${key}" aria-expanded="${open}">
-        <span class="group-caret">${open ? '▾' : '▸'}</span>
+        <span class="group-caret">${icon('chevron')}</span>
         <strong>${g.name}</strong>
         <span class="group-meta">
-          ${g.hasOverdue ? '<span class="due-badge overdue">Vencido</span>' : ''}
-          <span>${g.openCount ? `${g.openCount} pendiente${g.openCount === 1 ? '' : 's'}` : 'Al dia'}</span>
-          <strong class="${g.balance > 0 ? 'neg-cell' : 'pos-cell'}">${label} ${formatUsd(g.balance)}</strong>
+          <span class="gm-flag">${g.hasOverdue ? '<span class="due-badge overdue">Vencido</span>' : ''}</span>
+          <span class="gm-count">${g.openCount ? `${g.openCount} pendiente${g.openCount === 1 ? '' : 's'}` : 'Al día'}</span>
+          <strong class="group-amount ${g.balance <= 0 ? 'pos-cell' : g.hasOverdue ? 'neg-cell' : 'due-cell'}">${label} ${formatUsd(g.balance)}</strong>
         </span>
       </button>
       ${open ? `<div class="table-wrap">${tableHtml}</div>` : ''}
@@ -2734,7 +2758,7 @@ function renderGroupBlock(g, { kind, label, tableHtml }) {
 function renderOrderDocActions(orderId, colspan) {
   const order = state.orders.find((o) => o.id === orderId);
   if (!order) {
-    return `<tr class="debt-actions-row"><td colspan="${colspan}"><span class="muted-cell">Este credito no tiene un pedido vinculado.</span></td></tr>`;
+    return `<tr class="debt-actions-row"><td colspan="${colspan}"><span class="muted-cell">Este crédito no tiene un pedido vinculado.</span></td></tr>`;
   }
   return `
     <tr class="debt-actions-row">
@@ -2744,8 +2768,8 @@ function renderOrderDocActions(orderId, colspan) {
           <button class="ghost-button compact" data-doc="factura|${order.id}">Factura</button>
           <button class="ghost-button compact" data-doc="nota_entrega|${order.id}">Nota entrega</button>
           <button class="ghost-button compact" data-doc="recibo|${order.id}">Recibo</button>
-          <button class="ghost-button compact" data-doc="cotizacion|${order.id}">Cotizacion</button>
-          <button class="ghost-button compact" data-thermal="${order.id}">Termico</button>
+          <button class="ghost-button compact" data-doc="cotizacion|${order.id}">Cotización</button>
+          <button class="ghost-button compact" data-thermal="${order.id}">Térmico</button>
           <button class="wa-button compact" data-wa="${order.id}">WhatsApp</button>
         </div>
       </td>
@@ -2770,7 +2794,7 @@ function renderReceivables() {
       label: 'Debe',
       tableHtml: `
         <table>
-          <thead><tr><th>Pedido</th><th>Fecha</th><th>Vence</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>Pedido</th><th>Fecha</th><th>Vence</th><th class="num">Total</th><th class="num">Abonado</th><th class="num">Saldo</th><th>Estado</th><th></th></tr></thead>
           <tbody>
             ${g.items
               .map((r) => {
@@ -2778,12 +2802,12 @@ function renderReceivables() {
                 const open = expandedDebtRow === r.id;
                 return `
                   <tr class="debt-row ${overdue ? 'row-overdue' : ''} ${open ? 'open' : ''}" data-debt-row="${r.id}" title="Toca para ver la factura y otros documentos">
-                    <td><span class="row-caret">${open ? '▾' : '▸'}</span> #${r.orderNumber}</td>
+                    <td><span class="row-caret">${icon('chevron')}</span>#${r.orderNumber}</td>
                     <td>${r.date}</td>
                     <td>${dueCellFor(r, isOverdue, today)}</td>
-                    <td>${formatUsd(r.totalUsd)}</td>
-                    <td>${formatUsd(paidAmount(r))}</td>
-                    <td><strong>${formatUsd(receivableBalance(r))}</strong></td>
+                    <td class="num">${formatUsd(r.totalUsd)}</td>
+                    <td class="num">${formatUsd(paidAmount(r))}</td>
+                    <td class="num"><strong>${formatUsd(receivableBalance(r))}</strong></td>
                     <td><span class="status-pill ${overdue ? 'annulled' : r.status === 'paid' ? 'delivered' : r.status === 'partial' ? 'prepared' : 'pending'}">${overdue ? 'Vencida' : statusLabels[r.status] || r.status}</span></td>
                     <td>${r.status === 'paid' ? '' : `<button class="primary-button compact" data-abono="${r.id}">Abonar</button>`}</td>
                   </tr>
@@ -2802,15 +2826,15 @@ function renderReceivables() {
         <p>Agrupadas por cliente. Registra abonos hasta saldar cada deuda.</p>
       </div>
       <div class="dashboard-grid">
-        ${metricCard('Por cobrar', formatUsd(summary.balanceUsd), `${summary.openCount} creditos abiertos`, 'solid')}
-        ${metricCard('Vencido', formatUsd(summary.overdueUsd), `${summary.overdueCount} creditos vencidos`, summary.overdueCount ? 'alert' : '')}
+        ${metricCard('Por cobrar', formatUsd(summary.balanceUsd), `${summary.openCount} créditos abiertos`, 'solid')}
+        ${metricCard('Vencido', formatUsd(summary.overdueUsd), `${summary.overdueCount} créditos vencidos`, summary.overdueCount ? 'alert' : '')}
         ${metricCard('Cobrado', formatUsd(summary.paidUsd), 'Abonos recibidos', '')}
-        ${metricCard('Total a credito', formatUsd(summary.totalUsd), `${summary.totalCount} ventas`, '')}
+        ${metricCard('Total a crédito', formatUsd(summary.totalUsd), `${summary.totalCount} ventas`, '')}
       </div>
       ${
         groups.length
           ? groups.map(groupHtml).join('')
-          : '<div class="empty-cart">Sin cuentas por cobrar. Las ventas a credito apareceran aqui.</div>'
+          : '<div class="empty-cart">Sin cuentas por cobrar. Las ventas a crédito aparecerán aquí.</div>'
       }
     </section>
     ${renderAccountModal()}
@@ -2834,7 +2858,7 @@ function renderPayables() {
       label: 'Debes',
       tableHtml: `
         <table>
-          <thead><tr><th>Concepto</th><th>Fecha</th><th>Vence</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>Concepto</th><th>Fecha</th><th>Vence</th><th class="num">Total</th><th class="num">Pagado</th><th class="num">Saldo</th><th>Estado</th><th></th></tr></thead>
           <tbody>
             ${g.items
               .map((p) => {
@@ -2844,9 +2868,9 @@ function renderPayables() {
                     <td>${p.concept || 'Compra'}${p.note ? `<br/><small class="muted-cell">${p.note}</small>` : ''}</td>
                     <td>${p.date}</td>
                     <td>${dueCellFor(p, isPayableOverdue, today)}</td>
-                    <td>${formatUsd(p.totalUsd)}</td>
-                    <td>${formatUsd(payablePaidAmount(p))}</td>
-                    <td><strong>${formatUsd(payableBalance(p))}</strong></td>
+                    <td class="num">${formatUsd(p.totalUsd)}</td>
+                    <td class="num">${formatUsd(payablePaidAmount(p))}</td>
+                    <td class="num"><strong>${formatUsd(payableBalance(p))}</strong></td>
                     <td><span class="status-pill ${overdue ? 'annulled' : p.status === 'paid' ? 'delivered' : p.status === 'partial' ? 'prepared' : 'pending'}">${overdue ? 'Vencida' : statusLabels[p.status] || p.status}</span></td>
                     <td>${p.status === 'paid' ? '' : `<button class="primary-button compact" data-pagar="${p.id}">Pagar</button>`}</td>
                   </tr>`;
@@ -2863,7 +2887,7 @@ function renderPayables() {
         <h2>Cuentas por pagar</h2>
         <button class="primary-button compact" data-action="new-payable">+ Nueva cuenta por pagar</button>
       </div>
-      <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">Lo que le debes a tus proveedores, agrupado. Tambien puedes generarlas desde una orden del Galpon.</p>
+      <p class="muted-cell" style="text-align:left;margin:-8px 0 8px;">Lo que le debes a tus proveedores, agrupado. También puedes generarlas desde una orden del Galpón.</p>
       <div class="dashboard-grid">
         ${metricCard('Por pagar', formatUsd(summary.balanceUsd), `${summary.openCount} deudas abiertas`, 'solid')}
         ${metricCard('Vencido', formatUsd(summary.overdueUsd), `${summary.overdueCount} deudas vencidas`, summary.overdueCount ? 'alert' : '')}
@@ -2873,7 +2897,7 @@ function renderPayables() {
       ${
         groups.length
           ? groups.map(groupHtml).join('')
-          : '<div class="empty-cart">Sin cuentas por pagar. Crea una con el boton o desde una orden del Galpon.</div>'
+          : '<div class="empty-cart">Sin cuentas por pagar. Crea una con el botón o desde una orden del Galpón.</div>'
       }
     </section>
     ${renderAccountModal()}
@@ -2941,7 +2965,7 @@ function renderRates() {
           </label>
           <label>Modo
             <select data-rounding-field="mode">
-              ${option2('nearest', 'Mas cercano', rounding.mode)}
+              ${option2('nearest', 'Más cercano', rounding.mode)}
               ${option2('up', 'Hacia arriba', rounding.mode)}
               ${option2('down', 'Hacia abajo', rounding.mode)}
             </select>
@@ -3025,7 +3049,7 @@ async function fetchBcvRate() {
   try {
     const value = await getBcvRate();
     // El boton aplica la tasa BCV como tasa de cobro en TODO el sistema.
-    applyChargedRate(value, 'BCV', 'Actualizacion BCV desde el modulo de tasa');
+    applyChargedRate(value, 'BCV', 'Actualización BCV desde el módulo de tasa');
     bcvStatus = `BCV ${value} Bs/$ aplicado como tasa de cobro en todo el sistema.`;
     render();
   } catch (error) {
@@ -3044,7 +3068,7 @@ async function autoRefreshBcv() {
     const today = new Date().toISOString().slice(0, 10);
     const manualToday = charged.source === 'manual' && charged.date === today;
     if (!manualToday && rateChanged(charged.value, value)) {
-      applyChargedRate(value, 'BCV', 'Actualizacion automatica BCV al abrir');
+      applyChargedRate(value, 'BCV', 'Actualización automática BCV al abrir');
     } else {
       // Solo registra la referencia BCV del dia en el historial.
       setState(() => {
@@ -3092,14 +3116,14 @@ function renderGalpon() {
   return `
     <section class="galpon-panel">
       <div class="section-heading">
-        <h2>Operacion galpon</h2>
+        <h2>Operación galpón</h2>
         <p>Controla lo que debes preparar/comprar sin tocar inventario propio.</p>
       </div>
       <div class="supplier-list">
         ${
           state.supplierOrders.length
             ? state.supplierOrders.map(renderSupplierOrder).join('')
-            : '<div class="empty-cart">Finaliza una venta bajo pedido para crear orden al galpon</div>'
+            : '<div class="empty-cart">Finaliza una venta bajo pedido para crear orden al galpón</div>'
         }
       </div>
     </section>
@@ -3193,7 +3217,7 @@ function renderAccounts() {
         <button class="ghost-button compact" data-acct-action="deposit">+ Ingresar saldo</button>
         <button class="ghost-button compact" data-acct-action="withdraw">- Retirar saldo</button>
         <button class="ghost-button compact" data-acct-action="new-account">+ Nueva cuenta</button>
-        <button class="ghost-button compact" data-acct-action="new-method">+ Nuevo metodo de pago</button>
+        <button class="ghost-button compact" data-acct-action="new-method">+ Nuevo método de pago</button>
         <div class="account-totals">
           <strong>Total USD ${formatUsd(totals.USD || 0)}</strong>
           <strong>Total Bs ${formatVes(totals.VES || 0)}</strong>
@@ -3218,7 +3242,7 @@ function renderAccounts() {
                   `
                 )
                 .join('')
-            : '<div class="empty-cart">Aun no hay movimientos de caja</div>'
+            : '<div class="empty-cart">Aún no hay movimientos de caja</div>'
         }
       </div>
     </section>
@@ -3394,7 +3418,7 @@ function renderAccountModal() {
       <label>Moneda
         <select data-modal-select="currency">
           ${option2('USD', 'USD ($)', m.currency || 'USD')}
-          ${option2('VES', 'Bolivares (Bs)', m.currency || 'USD')}
+          ${option2('VES', 'Bolívares (Bs)', m.currency || 'USD')}
         </select>
       </label>
       <label>Saldo inicial
@@ -3402,7 +3426,7 @@ function renderAccountModal() {
       </label>
     `;
   } else if (m.type === 'new-method') {
-    title = 'Nuevo metodo de pago';
+    title = 'Nuevo método de pago';
     body = `
       <label>Nombre del metodo
         <input type="text" data-modal-field="name" value="${m.name || ''}" placeholder="Ej: Pago Movil Mercantil" />
@@ -3509,8 +3533,8 @@ function renderEditModal() {
     body = `
       ${fieldRow('Nombre', 'name', v.name, { placeholder: 'Nombre del cliente o negocio' })}
       ${fieldRow('Cedula / RIF', 'idDoc', v.idDoc, { placeholder: 'V-12.345.678 / J-...' })}
-      ${fieldRow('Telefono', 'phone', v.phone, { placeholder: '0412...' })}
-      ${fieldRow('Direccion', 'address', v.address, { placeholder: 'Zona / direccion de entrega' })}
+      ${fieldRow('Teléfono', 'phone', v.phone, { placeholder: '0412...' })}
+      ${fieldRow('Dirección', 'address', v.address, { placeholder: 'Zona / dirección de entrega' })}
       ${fieldRow('Estatus', 'status', v.status, { options: [['Activo', 'Activo'], ['Inactivo', 'Inactivo']] })}
     `;
   } else if (editModal.kind === 'product') {
@@ -3518,12 +3542,12 @@ function renderEditModal() {
     body = `
       ${fieldRow('Nombre', 'name', v.name, { placeholder: 'Nombre del producto' })}
       <div class="modal-grid-2">
-        ${fieldRow('Codigo (SKU)', 'sku', v.sku, { placeholder: 'VC000' })}
+        ${fieldRow('Código (SKU)', 'sku', v.sku, { placeholder: 'VC000' })}
         ${fieldRow('Unidad', 'unit', v.unit, { options: [['Kg', 'Kg'], ['Und', 'Und'], ['Caja', 'Caja'], ['Bulto', 'Bulto'], ['Servicio', 'Servicio']] })}
       </div>
       ${fieldRow('Modo de control', 'controlMode', v.controlMode, {
         options: [
-          ['on_demand', 'Bajo pedido (galpon)'],
+          ['on_demand', 'Bajo pedido (galpón)'],
           ['inventory', 'Inventario (descuenta stock)'],
           ['no_inventory', 'Sin inventario'],
           ['service', 'Servicio']
@@ -3962,7 +3986,7 @@ function bindAccountModal() {
       const margin = calculateSupplierOrderMargin(so);
       const total = roundMoney(margin.actualCostUsd || margin.estimatedCostUsd || 0);
       if (!total) {
-        window.alert('La orden no tiene costo todavia. Carga el costo real primero.');
+        window.alert('La orden no tiene costo todavía. Carga el costo real primero.');
         return;
       }
       setState(() => {
@@ -4138,7 +4162,7 @@ function bindEvents() {
       if (!data || typeof data !== 'object' || !Array.isArray(data.products)) {
         throw new Error('El archivo no parece un respaldo del sistema.');
       }
-      const resumen = `${(data.orders || []).length} ventas · ${(data.receivables || []).length} creditos · ${(data.payables || []).length} cuentas por pagar · ${(data.customers || []).length} clientes`;
+      const resumen = `${(data.orders || []).length} ventas · ${(data.receivables || []).length} créditos · ${(data.payables || []).length} cuentas por pagar · ${(data.customers || []).length} clientes`;
       const ok = window.confirm(
         `Restaurar respaldo${parsed.exportedAt ? ` del ${new Date(parsed.exportedAt).toLocaleString('es-VE')}` : ''}\n(${resumen})\n\nReemplaza los datos de este equipo y de la nube con los del archivo. ¿Continuar?`
       );
@@ -4361,8 +4385,8 @@ function bindEvents() {
   document.querySelector('[data-action="reset-storage"]')?.addEventListener('click', () => {
     const ok = window.confirm(
       'Esto borra los datos guardados en ESTE equipo y recarga la pagina.\n\n' +
-        'Si la sincronizacion esta activa, el sistema se restaurara desde la nube ' +
-        '(tendras que iniciar sesion de nuevo).\n\n¿Continuar?'
+        'Si la sincronización está activa, el sistema se restaurará desde la nube ' +
+        '(tendras que iniciar sesión de nuevo).\n\n¿Continuar?'
     );
     if (!ok) return;
     localStorage.clear();
@@ -4549,7 +4573,7 @@ function finalizeCurrentOrder() {
   const isCredit = paymentMode === 'credito';
   const isMixed = paymentMode === 'mixto';
   if (isCredit && !currentOrder.customerId) {
-    window.alert('Selecciona un cliente del sistema para registrar el credito.');
+    window.alert('Selecciona un cliente del sistema para registrar el crédito.');
     return;
   }
 
@@ -4574,7 +4598,7 @@ function finalizeCurrentOrder() {
     : null;
 
   const singleMethod = isCredit
-    ? { id: 'credito', name: 'Credito', currency: 'USD', accountId: null }
+    ? { id: 'credito', name: 'Crédito', currency: 'USD', accountId: null }
     : state.paymentMethods.find((item) => item.id === selectedPaymentMethod) || state.paymentMethods[0];
 
   const paid = finalizeOrder(currentOrder, {

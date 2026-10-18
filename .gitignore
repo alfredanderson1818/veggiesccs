@@ -4,3 +4,4 @@ node_modules/
 .claude/
 factura-test.jpg
 src/firebase-config.local.mjs
+_preview.html
